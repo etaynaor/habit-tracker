@@ -531,13 +531,39 @@
                     updateSignedInUI();
                     loadFromDrive();
                 } else {
-                    // No valid token, show sign-in button
-                    console.log('No valid token found, showing sign-in button');
-                    const wasSignedInBefore = localStorage.getItem('googleSignedIn') === 'true';
-                    document.getElementById('authBtn').textContent = wasSignedInBefore ? 'Sign in again' : 'Sign in with Google';
-                    document.getElementById('authBtn').disabled = false;
+                    // Try to silently restore session
+                    const savedEmail = localStorage.getItem('googleUserEmail');
+                    if (savedEmail) {
+                        console.log('Attempting silent sign-in with hint:', savedEmail);
+                        attemptSilentSignIn(savedEmail);
+                    } else {
+                        // No saved session, show sign-in button
+                        console.log('No saved session, showing sign-in button');
+                        document.getElementById('authBtn').textContent = 'Sign in with Google';
+                        document.getElementById('authBtn').disabled = false;
+                    }
                 }
             }
+        }
+
+        function attemptSilentSignIn(email) {
+            tokenClient.callback = async (resp) => {
+                if (resp.error !== undefined) {
+                    console.log('Silent sign-in failed:', resp.error);
+                    // Show sign-in button
+                    document.getElementById('authBtn').textContent = 'Sign in again';
+                    document.getElementById('authBtn').disabled = false;
+                    return;
+                }
+
+                console.log('Silent sign-in successful');
+                accessToken = gapi.client.getToken().access_token;
+                updateSignedInUI();
+                await loadFromDrive();
+            };
+
+            // Request token with hint (silent if user session exists)
+            tokenClient.requestAccessToken({prompt: '', login_hint: email});
         }
 
         function updateSignedInUI() {
@@ -1071,6 +1097,17 @@
 
                 accessToken = gapi.client.getToken().access_token;
                 localStorage.setItem('googleSignedIn', 'true');
+
+                // Get and store user email for future silent sign-ins
+                try {
+                    const userInfo = await gapi.client.drive.about.get({fields: 'user'});
+                    const email = userInfo.result.user.emailAddress;
+                    localStorage.setItem('googleUserEmail', email);
+                    console.log('Stored user email:', email);
+                } catch (err) {
+                    console.error('Could not get user email:', err);
+                }
+
                 updateSignedInUI();
 
                 // Load data from Drive
