@@ -28,25 +28,63 @@
             font-size: 24px;
         }
         
-        .week-label {
-            text-align: center;
+        .header-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
             margin-bottom: 20px;
+            align-items: center;
+        }
+
+        .week-navigation {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .week-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .week-display label {
             font-size: 14px;
             color: #666;
         }
-        
-        .week-label input {
+
+        .week-display input {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            padding: 8px;
+            padding: 8px 12px;
             font-size: 14px;
             border: 1px solid #ddd;
             border-radius: 4px;
-            margin-bottom: 10px;
         }
-        
-        .sync-section {
-            text-align: center;
-            margin: 15px 0;
+
+        .nav-btn {
+            padding: 8px 14px;
+            background: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.2s;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
+        .nav-btn:hover {
+            background: #e0e0e0;
+        }
+
+        .nav-btn:active {
+            background: #d0d0d0;
+        }
+
+        .auth-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
         }
         
         .sync-btn {
@@ -70,9 +108,10 @@
         }
         
         #syncStatus {
-            font-size: 12px;
-            margin-top: 5px;
-            min-height: 18px;
+            font-size: 11px;
+            margin-top: 3px;
+            min-height: 16px;
+            opacity: 0.8;
         }
         
         .tracker {
@@ -194,7 +233,27 @@
             h1 {
                 font-size: 32px;
             }
-            
+
+            .header-controls {
+                flex-direction: row;
+                justify-content: space-between;
+                margin-bottom: 30px;
+            }
+
+            .week-display label {
+                font-size: 16px;
+            }
+
+            .week-display input {
+                padding: 10px 14px;
+                font-size: 15px;
+            }
+
+            .nav-btn {
+                padding: 10px 16px;
+                font-size: 18px;
+            }
+
             .grid {
                 grid-template-columns: 150px repeat(7, 1fr);
                 gap: 1px;
@@ -231,14 +290,21 @@
 </head>
 <body>
     <h1>🎸 Music Practice Tracker</h1>
-    <div class="week-label">
-        Week of: <input type="date" id="weekDate">
-    </div>
-    
-    <div class="sync-section">
-        <button id="authBtn" class="sync-btn" onclick="handleAuth()" disabled>Loading...</button>
-        <button id="syncBtn" class="sync-btn" onclick="syncData()" style="display:none;">☁️ Sync Now</button>
-        <div id="syncStatus"></div>
+
+    <div class="header-controls">
+        <div class="week-navigation">
+            <button class="nav-btn" onclick="previousWeek()">◀</button>
+            <div class="week-display">
+                <label>Week of:</label>
+                <input type="date" id="weekDate" onchange="updateWeekDisplay()">
+            </div>
+            <button class="nav-btn" onclick="nextWeek()">▶</button>
+        </div>
+
+        <div class="auth-section">
+            <button id="authBtn" class="sync-btn" onclick="handleAuth()" disabled>Loading...</button>
+            <div id="syncStatus"></div>
+        </div>
     </div>
     
     <div class="tracker">
@@ -386,7 +452,30 @@
         function saveLocalData(data) {
             localStorage.setItem('musicPractice', JSON.stringify(data));
         }
-        
+
+        // Week navigation
+        function previousWeek() {
+            const dateInput = document.getElementById('weekDate');
+            const currentDate = new Date(dateInput.value);
+            currentDate.setDate(currentDate.getDate() - 7);
+            dateInput.valueAsDate = currentDate;
+            updateWeekDisplay();
+        }
+
+        function nextWeek() {
+            const dateInput = document.getElementById('weekDate');
+            const currentDate = new Date(dateInput.value);
+            currentDate.setDate(currentDate.getDate() + 7);
+            dateInput.valueAsDate = currentDate;
+            updateWeekDisplay();
+        }
+
+        function updateWeekDisplay() {
+            // This will be called when week changes
+            // You could add logic here to load week-specific data if needed
+            console.log('Week changed to:', document.getElementById('weekDate').value);
+        }
+
         // Restore checked states
         function renderData() {
             document.querySelectorAll('.check-cell').forEach(cell => {
@@ -492,10 +581,10 @@
                 }
 
                 accessToken = gapi.client.getToken().access_token;
-                document.getElementById('authBtn').style.display = 'none';
-                document.getElementById('syncBtn').style.display = 'inline-block';
-                document.getElementById('syncBtn').classList.add('signed-in');
-                showStatus('✓ Signed in', 'success');
+                document.getElementById('authBtn').textContent = '✓ Signed in';
+                document.getElementById('authBtn').classList.add('signed-in');
+                document.getElementById('authBtn').disabled = true;
+                showStatus('Auto-sync enabled', 'success');
 
                 // Load data from Drive
                 await loadFromDrive();
@@ -602,12 +691,12 @@
         function showStatus(message, type) {
             const statusEl = document.getElementById('syncStatus');
             statusEl.textContent = message;
-            statusEl.style.color = type === 'error' ? '#ff5722' : type === 'success' ? '#4CAF50' : '#666';
-            
-            if (type === 'success') {
+            statusEl.style.color = type === 'error' ? '#ff5722' : type === 'success' ? '#4CAF50' : '#999';
+
+            if (type === 'success' || type === 'loading') {
                 setTimeout(() => {
                     statusEl.textContent = '';
-                }, 3000);
+                }, 2000);
             }
         }
         
