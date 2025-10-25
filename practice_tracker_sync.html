@@ -162,17 +162,41 @@
         .check-cell {
             cursor: pointer;
             font-size: 20px;
-            transition: background 0.2s;
+            transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
             touch-action: manipulation;
+            position: relative;
         }
-        
+
         .check-cell:active {
-            background: #e0e0e0;
+            transform: scale(0.95);
         }
-        
+
         .check-cell.checked {
             background: #4CAF50;
             color: white;
+            animation: checkBounce 0.5s ease;
+        }
+
+        .check-cell.just-checked {
+            animation: checkPop 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        @keyframes checkBounce {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2) rotate(5deg); }
+            100% { transform: scale(1) rotate(0deg); }
+        }
+
+        @keyframes checkPop {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.15); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes celebration {
+            0%, 100% { transform: scale(1); }
+            25% { transform: scale(1.05) rotate(-5deg); }
+            75% { transform: scale(1.05) rotate(5deg); }
         }
         
         .summary {
@@ -426,9 +450,24 @@
 
         function updateAuthButton() {
             if (gapiInited && gisInited) {
-                document.getElementById('authBtn').textContent = 'Sign in with Google';
-                document.getElementById('authBtn').disabled = false;
+                // Check if user was previously signed in
+                const wasSignedIn = localStorage.getItem('googleSignedIn');
+                if (wasSignedIn && gapi.client.getToken()) {
+                    accessToken = gapi.client.getToken().access_token;
+                    updateSignedInUI();
+                    loadFromDrive();
+                } else {
+                    document.getElementById('authBtn').textContent = 'Sign in with Google';
+                    document.getElementById('authBtn').disabled = false;
+                }
             }
+        }
+
+        function updateSignedInUI() {
+            document.getElementById('authBtn').textContent = '✓ Signed in';
+            document.getElementById('authBtn').classList.add('signed-in');
+            document.getElementById('authBtn').disabled = true;
+            showStatus('Auto-sync enabled', 'success');
         }
     </script>
 
@@ -451,6 +490,106 @@
         
         function saveLocalData(data) {
             localStorage.setItem('musicPractice', JSON.stringify(data));
+        }
+
+        // Sound effects using Web Audio API
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playCheckSound() {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.frequency.value = 800;
+            oscillator.type = 'sine';
+
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.1);
+        }
+
+        function playUncheckSound() {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.frequency.value = 400;
+            oscillator.type = 'sine';
+
+            gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.1);
+        }
+
+        function playCelebrationSound() {
+            const notes = [523, 659, 784, 1047]; // C, E, G, C
+            notes.forEach((freq, index) => {
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+
+                oscillator.frequency.value = freq;
+                oscillator.type = 'triangle';
+
+                const startTime = audioContext.currentTime + (index * 0.1);
+                gainNode.gain.setValueAtTime(0.2, startTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + 0.2);
+
+                oscillator.start(startTime);
+                oscillator.stop(startTime + 0.2);
+            });
+        }
+
+        // Confetti effect
+        function createConfetti() {
+            const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#6c5ce7', '#a29bfe'];
+            const confettiCount = 50;
+
+            for (let i = 0; i < confettiCount; i++) {
+                const confetti = document.createElement('div');
+                confetti.style.position = 'fixed';
+                confetti.style.width = '10px';
+                confetti.style.height = '10px';
+                confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                confetti.style.left = Math.random() * window.innerWidth + 'px';
+                confetti.style.top = '-10px';
+                confetti.style.opacity = '1';
+                confetti.style.pointerEvents = 'none';
+                confetti.style.zIndex = '9999';
+                confetti.style.borderRadius = '50%';
+
+                document.body.appendChild(confetti);
+
+                const duration = Math.random() * 3 + 2;
+                const rotation = Math.random() * 360;
+                const xOffset = (Math.random() - 0.5) * 200;
+
+                confetti.animate([
+                    {
+                        transform: `translateY(0) translateX(0) rotate(0deg)`,
+                        opacity: 1
+                    },
+                    {
+                        transform: `translateY(${window.innerHeight + 10}px) translateX(${xOffset}px) rotate(${rotation}deg)`,
+                        opacity: 0
+                    }
+                ], {
+                    duration: duration * 1000,
+                    easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+                });
+
+                setTimeout(() => confetti.remove(), duration * 1000);
+            }
         }
 
         // Week navigation
@@ -494,32 +633,98 @@
             updateSummary();
         }
         
+        // Track previous goal states for celebration triggers
+        let previousGoalStates = {};
+
         // Click handler
         document.querySelectorAll('.check-cell').forEach(cell => {
             cell.addEventListener('click', function() {
                 const instrument = this.dataset.instrument;
                 const day = this.dataset.day;
                 const key = `${instrument}-${day}`;
-                
+
+                const wasChecked = this.classList.contains('checked');
                 this.classList.toggle('checked');
-                
+
                 if (this.classList.contains('checked')) {
                     this.textContent = '✓';
                     practiceData[key] = true;
+                    playCheckSound();
+
+                    // Add pop animation
+                    this.classList.add('just-checked');
+                    setTimeout(() => this.classList.remove('just-checked'), 400);
                 } else {
                     this.textContent = '';
                     delete practiceData[key];
+                    playUncheckSound();
                 }
-                
+
                 saveLocalData(practiceData);
+
+                // Check if goal was just achieved
+                const goalAchieved = checkForNewGoals(instrument);
+                if (goalAchieved && !wasChecked) {
+                    playCelebrationSound();
+                    createConfetti();
+                    showAchievement(instrument);
+                }
+
                 updateSummary();
-                
+
                 // Auto-sync if signed in
                 if (accessToken) {
                     syncData();
                 }
             });
         });
+
+        function checkForNewGoals(instrument) {
+            let count = 0;
+            for (let day = 0; day < 7; day++) {
+                const key = `${instrument}-${day}`;
+                if (practiceData[key]) count++;
+            }
+
+            const wasGoalMet = previousGoalStates[instrument] || false;
+            const isGoalMet = count >= 3;
+            previousGoalStates[instrument] = isGoalMet;
+
+            return isGoalMet && !wasGoalMet;
+        }
+
+        function showAchievement(instrument) {
+            const achievement = document.createElement('div');
+            achievement.style.position = 'fixed';
+            achievement.style.top = '50%';
+            achievement.style.left = '50%';
+            achievement.style.transform = 'translate(-50%, -50%)';
+            achievement.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+            achievement.style.color = 'white';
+            achievement.style.padding = '30px 50px';
+            achievement.style.borderRadius = '15px';
+            achievement.style.fontSize = '24px';
+            achievement.style.fontWeight = 'bold';
+            achievement.style.zIndex = '10000';
+            achievement.style.boxShadow = '0 10px 40px rgba(0,0,0,0.3)';
+            achievement.style.animation = 'celebration 0.6s ease';
+
+            const instrumentNames = {
+                'electric': 'Electric Guitar',
+                'classical': 'Classical Guitar',
+                'bass': 'Bass',
+                'piano': 'Piano'
+            };
+
+            achievement.textContent = `🎉 ${instrumentNames[instrument]} Goal Achieved! 🎉`;
+            document.body.appendChild(achievement);
+
+            setTimeout(() => {
+                achievement.style.opacity = '0';
+                achievement.style.transition = 'opacity 0.5s';
+                setTimeout(() => achievement.remove(), 500);
+            }, 2000);
+        }
         
         function updateSummary() {
             const instruments = ['electric', 'classical', 'bass', 'piano'];
@@ -581,10 +786,8 @@
                 }
 
                 accessToken = gapi.client.getToken().access_token;
-                document.getElementById('authBtn').textContent = '✓ Signed in';
-                document.getElementById('authBtn').classList.add('signed-in');
-                document.getElementById('authBtn').disabled = true;
-                showStatus('Auto-sync enabled', 'success');
+                localStorage.setItem('googleSignedIn', 'true');
+                updateSignedInUI();
 
                 // Load data from Drive
                 await loadFromDrive();
