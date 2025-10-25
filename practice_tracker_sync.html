@@ -46,8 +46,9 @@
 
         .week-display {
             display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: 8px;
+            gap: 5px;
         }
 
         .week-display label {
@@ -61,6 +62,12 @@
             font-size: 14px;
             border: 1px solid #ddd;
             border-radius: 4px;
+        }
+
+        .week-range {
+            font-size: 11px;
+            color: #999;
+            white-space: nowrap;
         }
 
         .nav-btn {
@@ -372,6 +379,7 @@
             <div class="week-display">
                 <label>Week of:</label>
                 <input type="date" id="weekDate" onchange="updateWeekDisplay()">
+                <div class="week-range" id="weekRange"></div>
             </div>
             <button class="nav-btn" onclick="nextWeek()">▶</button>
         </div>
@@ -857,7 +865,27 @@
             renderData();
             // Update streak display
             updateStreak();
+            // Update week range display
+            updateWeekRangeDisplay();
             console.log('Week changed to:', document.getElementById('weekDate').value);
+        }
+
+        function updateWeekRangeDisplay() {
+            const date = new Date(document.getElementById('weekDate').value);
+            const dayOfWeek = date.getDay();
+            const monday = new Date(date);
+            monday.setDate(date.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1));
+            const sunday = new Date(monday);
+            sunday.setDate(monday.getDate() + 6);
+
+            const formatDate = (d) => {
+                const month = d.toLocaleDateString('en-US', { month: 'short' });
+                const day = d.getDate();
+                return `${month} ${day}`;
+            };
+
+            document.getElementById('weekRange').textContent =
+                `${formatDate(monday)} - ${formatDate(sunday)}`;
         }
 
         // Restore checked states
@@ -1160,6 +1188,7 @@
             loadWeekData(); // Load current week's data
             renderData();
             updateStreak();
+            updateWeekRangeDisplay(); // Show week range
         });
     </script>
 </body>
