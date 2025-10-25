@@ -546,19 +546,39 @@
         // Set current week
         document.getElementById('weekDate').valueAsDate = new Date();
         
-        // Practice data management
-        let practiceData = loadLocalData();
-        
-        function loadLocalData() {
+        // Practice data management - store per week
+        let allWeeksData = loadAllWeeksData();
+        let practiceData = {}; // Current week's data
+
+        function loadAllWeeksData() {
             const saved = localStorage.getItem('musicPractice');
             if (saved) {
-                return JSON.parse(saved);
+                const data = JSON.parse(saved);
+                // Migrate old format to new format if needed
+                if (!data.weeks) {
+                    // Old format - convert it
+                    const weekKey = getWeekKey();
+                    return { weeks: { [weekKey]: data } };
+                }
+                return data;
             }
-            return {};
+            return { weeks: {} };
         }
-        
-        function saveLocalData(data) {
-            localStorage.setItem('musicPractice', JSON.stringify(data));
+
+        function saveAllWeeksData() {
+            localStorage.setItem('musicPractice', JSON.stringify(allWeeksData));
+        }
+
+        function loadWeekData() {
+            const weekKey = getWeekKey();
+            practiceData = allWeeksData.weeks[weekKey] || {};
+            console.log('Loaded week:', weekKey, 'Data:', practiceData);
+        }
+
+        function saveWeekData() {
+            const weekKey = getWeekKey();
+            allWeeksData.weeks[weekKey] = practiceData;
+            saveAllWeeksData();
         }
 
         // Streak management
@@ -831,8 +851,12 @@
         }
 
         function updateWeekDisplay() {
-            // This will be called when week changes
-            // You could add logic here to load week-specific data if needed
+            // Load the new week's data
+            loadWeekData();
+            // Re-render the grid with the new week's data
+            renderData();
+            // Update streak display
+            updateStreak();
             console.log('Week changed to:', document.getElementById('weekDate').value);
         }
 
@@ -881,7 +905,7 @@
                     playUncheckSound();
                 }
 
-                saveLocalData(practiceData);
+                saveWeekData(practiceData);
 
                 // Check if goal was just achieved
                 const goalAchieved = checkForNewGoals(instrument);
@@ -989,7 +1013,7 @@
         function resetTracker() {
             if (confirm('Reset this week? This will clear all checkmarks.')) {
                 practiceData = {};
-                saveLocalData(practiceData);
+                saveWeekData(practiceData);
                 renderData();
                 
                 if (accessToken) {
@@ -1057,19 +1081,23 @@
         
         async function loadFromDrive() {
             showStatus('Loading from Drive...', 'loading');
-            
+
             try {
                 fileId = await findOrCreateFile();
                 if (!fileId) return;
-                
+
                 const response = await gapi.client.drive.files.get({
                     fileId: fileId,
                     alt: 'media'
                 });
-                
+
                 if (response.body) {
-                    practiceData = JSON.parse(response.body);
-                    saveLocalData(practiceData);
+                    const driveData = JSON.parse(response.body);
+                    // Merge with local data (prefer Drive data)
+                    allWeeksData = driveData;
+                    saveAllWeeksData();
+                    // Load current week
+                    loadWeekData();
                     renderData();
                     showStatus('✓ Loaded from Drive', 'success');
                 }
@@ -1093,7 +1121,7 @@
                     fileId = await findOrCreateFile();
                 }
                 
-                const dataStr = JSON.stringify(practiceData, null, 2);
+                const dataStr = JSON.stringify(allWeeksData, null, 2);
                 
                 const response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
                     method: 'PATCH',
@@ -1129,6 +1157,7 @@
         
         // Initialize on load
         window.addEventListener('load', () => {
+            loadWeekData(); // Load current week's data
             renderData();
             updateStreak();
         });
