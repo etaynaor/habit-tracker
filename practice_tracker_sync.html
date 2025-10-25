@@ -316,7 +316,8 @@
     
     <button class="reset-btn" onclick="resetTracker()">Reset Week</button>
     
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
+    <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
     <script>
         const CLIENT_ID = '90415557909-pgkuol7snj6s4o4tqrk2p0f8oginu53s.apps.googleusercontent.com';
         const API_KEY = 'AIzaSyA82u5qKmYkXl5cdBoYvQEizzdkgsi_ZR4';
@@ -464,22 +465,27 @@
         }
         
         function handleAuth() {
+            if (!gapiInited || !gisInited) {
+                showStatus('Loading... please wait', 'error');
+                return;
+            }
+
             tokenClient.callback = async (resp) => {
                 if (resp.error !== undefined) {
                     showStatus('Auth failed', 'error');
                     return;
                 }
-                
+
                 accessToken = gapi.client.getToken().access_token;
                 document.getElementById('authBtn').style.display = 'none';
                 document.getElementById('syncBtn').style.display = 'inline-block';
                 document.getElementById('syncBtn').classList.add('signed-in');
                 showStatus('✓ Signed in', 'success');
-                
+
                 // Load data from Drive
                 await loadFromDrive();
             };
-            
+
             if (gapi.client.getToken() === null) {
                 tokenClient.requestAccessToken({prompt: 'consent'});
             } else {
@@ -590,10 +596,8 @@
             }
         }
         
-        // Check if already signed in
+        // Initialize on load
         window.addEventListener('load', () => {
-            if (window.gapi) gapiLoaded();
-            if (window.google) gisLoaded();
             renderData();
         });
     </script>
