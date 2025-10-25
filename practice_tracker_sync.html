@@ -512,25 +512,19 @@
 
         function updateAuthButton() {
             if (gapiInited && gisInited) {
-                // Check if user was previously signed in
-                const wasSignedIn = localStorage.getItem('googleSignedIn');
-                if (wasSignedIn === 'true') {
-                    // Try to get a fresh token silently
-                    console.log('Attempting silent sign-in...');
-                    tokenClient.callback = async (resp) => {
-                        if (resp.error !== undefined) {
-                            console.log('Silent sign-in failed, showing sign-in button');
-                            document.getElementById('authBtn').textContent = 'Sign in with Google';
-                            document.getElementById('authBtn').disabled = false;
-                            return;
-                        }
-                        accessToken = gapi.client.getToken().access_token;
-                        updateSignedInUI();
-                        await loadFromDrive();
-                    };
-                    tokenClient.requestAccessToken({prompt: ''}); // Silent request
+                // Check if there's an existing valid token
+                const token = gapi.client.getToken();
+                if (token !== null && token.access_token) {
+                    // We have a valid token from the session
+                    console.log('Found existing token, using it');
+                    accessToken = token.access_token;
+                    updateSignedInUI();
+                    loadFromDrive();
                 } else {
-                    document.getElementById('authBtn').textContent = 'Sign in with Google';
+                    // No valid token, show sign-in button
+                    console.log('No valid token found, showing sign-in button');
+                    const wasSignedInBefore = localStorage.getItem('googleSignedIn') === 'true';
+                    document.getElementById('authBtn').textContent = wasSignedInBefore ? 'Sign in again' : 'Sign in with Google';
                     document.getElementById('authBtn').disabled = false;
                 }
             }
