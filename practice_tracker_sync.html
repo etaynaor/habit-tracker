@@ -227,7 +227,56 @@
         .goal-not-met {
             color: #ff5722;
         }
-        
+
+        .streak-section {
+            margin-top: 20px;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 8px;
+            color: white;
+        }
+
+        .streak-box {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 10px;
+        }
+
+        .streak-icon {
+            font-size: 48px;
+            animation: flicker 2s ease-in-out infinite;
+        }
+
+        @keyframes flicker {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .streak-info {
+            text-align: center;
+        }
+
+        .streak-number {
+            font-size: 48px;
+            font-weight: bold;
+            line-height: 1;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .streak-label {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-top: 5px;
+        }
+
+        .streak-description {
+            text-align: center;
+            font-size: 12px;
+            opacity: 0.8;
+        }
+
         button.reset-btn {
             display: block;
             margin: 20px auto;
@@ -398,12 +447,25 @@
                 <span id="piano-count">0 / 3</span>
             </div>
             <div class="summary-row" style="margin-top: 10px; padding-top: 10px; border-top: 2px solid #333;">
-                <span>Daily practice sessions:</span>
-                <span id="daily-count">0 days with 2+ instruments</span>
+                <span>Multi-instrument days:</span>
+                <span id="daily-count">0 / 7 days</span>
+            </div>
+        </div>
+
+        <div class="streak-section">
+            <div class="streak-box">
+                <div class="streak-icon">🔥</div>
+                <div class="streak-info">
+                    <div class="streak-number" id="streak-number">0</div>
+                    <div class="streak-label">Week Streak</div>
+                </div>
+            </div>
+            <div class="streak-description" id="streak-description">
+                Complete all 4 weekly goals to build your streak!
             </div>
         </div>
     </div>
-    
+
     <button class="reset-btn" onclick="resetTracker()">Reset Week</button>
 
     <script>
@@ -452,10 +514,21 @@
             if (gapiInited && gisInited) {
                 // Check if user was previously signed in
                 const wasSignedIn = localStorage.getItem('googleSignedIn');
-                if (wasSignedIn && gapi.client.getToken()) {
-                    accessToken = gapi.client.getToken().access_token;
-                    updateSignedInUI();
-                    loadFromDrive();
+                if (wasSignedIn === 'true') {
+                    // Try to get a fresh token silently
+                    console.log('Attempting silent sign-in...');
+                    tokenClient.callback = async (resp) => {
+                        if (resp.error !== undefined) {
+                            console.log('Silent sign-in failed, showing sign-in button');
+                            document.getElementById('authBtn').textContent = 'Sign in with Google';
+                            document.getElementById('authBtn').disabled = false;
+                            return;
+                        }
+                        accessToken = gapi.client.getToken().access_token;
+                        updateSignedInUI();
+                        await loadFromDrive();
+                    };
+                    tokenClient.requestAccessToken({prompt: ''}); // Silent request
                 } else {
                     document.getElementById('authBtn').textContent = 'Sign in with Google';
                     document.getElementById('authBtn').disabled = false;
@@ -490,6 +563,158 @@
         
         function saveLocalData(data) {
             localStorage.setItem('musicPractice', JSON.stringify(data));
+        }
+
+        // Streak management
+        let streakData = loadStreakData();
+
+        function loadStreakData() {
+            const saved = localStorage.getItem('streakData');
+            if (saved) {
+                return JSON.parse(saved);
+            }
+            return { completedWeeks: [], currentStreak: 0, longestStreak: 0 };
+        }
+
+        function saveStreakData(data) {
+            localStorage.setItem('streakData', JSON.stringify(data));
+        }
+
+        function getWeekKey() {
+            const date = new Date(document.getElementById('weekDate').value);
+            const year = date.getFullYear();
+            const weekNum = getWeekNumber(date);
+            return `${year}-W${weekNum}`;
+        }
+
+        function getWeekNumber(date) {
+            const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+            const dayNum = d.getUTCDay() || 7;
+            d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+            const yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+            return Math.ceil((((d - yearStart) / 86400000) + 1)/7);
+        }
+
+        function checkWeekCompletion() {
+            const instruments = ['electric', 'classical', 'bass', 'piano'];
+            let allGoalsMet = true;
+
+            instruments.forEach(instrument => {
+                let count = 0;
+                for (let day = 0; day < 7; day++) {
+                    const key = `${instrument}-${day}`;
+                    if (practiceData[key]) count++;
+                }
+                if (count < 3) allGoalsMet = false;
+            });
+
+            const weekKey = getWeekKey();
+            const wasCompleted = streakData.completedWeeks.includes(weekKey);
+
+            if (allGoalsMet && !wasCompleted) {
+                // Week just completed!
+                streakData.completedWeeks.push(weekKey);
+                updateStreak();
+                saveStreakData(streakData);
+
+                // Big celebration!
+                setTimeout(() => {
+                    playCelebrationSound();
+                    createConfetti();
+                    showStreakAchievement();
+                }, 500);
+            } else if (!allGoalsMet && wasCompleted) {
+                // Week uncompleted (user unchecked something)
+                streakData.completedWeeks = streakData.completedWeeks.filter(w => w !== weekKey);
+                updateStreak();
+                saveStreakData(streakData);
+            }
+        }
+
+        function updateStreak() {
+            // Sort completed weeks
+            const sorted = streakData.completedWeeks.sort();
+
+            if (sorted.length === 0) {
+                streakData.currentStreak = 0;
+                updateStreakDisplay();
+                return;
+            }
+
+            // Calculate current streak (consecutive weeks ending at current/recent week)
+            let streak = 1;
+            for (let i = sorted.length - 1; i > 0; i--) {
+                const current = parseWeekKey(sorted[i]);
+                const prev = parseWeekKey(sorted[i - 1]);
+
+                if (current.week - prev.week === 1 || (current.week === 1 && prev.week === 52)) {
+                    streak++;
+                } else {
+                    break;
+                }
+            }
+
+            streakData.currentStreak = streak;
+            if (streak > streakData.longestStreak) {
+                streakData.longestStreak = streak;
+            }
+
+            updateStreakDisplay();
+        }
+
+        function parseWeekKey(weekKey) {
+            const [year, week] = weekKey.split('-W');
+            return { year: parseInt(year), week: parseInt(week) };
+        }
+
+        function updateStreakDisplay() {
+            document.getElementById('streak-number').textContent = streakData.currentStreak;
+
+            const desc = document.getElementById('streak-description');
+            if (streakData.currentStreak === 0) {
+                desc.textContent = 'Complete all 4 weekly goals to start your streak!';
+            } else if (streakData.currentStreak === 1) {
+                desc.textContent = '🎉 Great start! Keep going!';
+            } else if (streakData.currentStreak < 4) {
+                desc.textContent = `💪 ${streakData.currentStreak} weeks strong! Keep it up!`;
+            } else if (streakData.currentStreak < 10) {
+                desc.textContent = `🔥 On fire! ${streakData.currentStreak} weeks in a row!`;
+            } else {
+                desc.textContent = `⭐️ LEGENDARY! ${streakData.currentStreak} week streak! (Best: ${streakData.longestStreak})`;
+            }
+        }
+
+        function showStreakAchievement() {
+            const achievement = document.createElement('div');
+            achievement.style.position = 'fixed';
+            achievement.style.top = '50%';
+            achievement.style.left = '50%';
+            achievement.style.transform = 'translate(-50%, -50%)';
+            achievement.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
+            achievement.style.color = 'white';
+            achievement.style.padding = '40px 60px';
+            achievement.style.borderRadius = '20px';
+            achievement.style.fontSize = '32px';
+            achievement.style.fontWeight = 'bold';
+            achievement.style.zIndex = '10000';
+            achievement.style.boxShadow = '0 20px 60px rgba(0,0,0,0.4)';
+            achievement.style.animation = 'celebration 0.6s ease';
+            achievement.style.textAlign = 'center';
+
+            const streakNum = streakData.currentStreak;
+            achievement.innerHTML = `
+                <div style="font-size: 64px; margin-bottom: 10px;">🔥</div>
+                <div>${streakNum} WEEK STREAK!</div>
+                <div style="font-size: 18px; margin-top: 10px; opacity: 0.9;">All goals completed!</div>
+            `;
+
+            document.body.appendChild(achievement);
+
+            setTimeout(() => {
+                achievement.style.opacity = '0';
+                achievement.style.transition = 'opacity 0.5s';
+                setTimeout(() => achievement.remove(), 500);
+            }, 3000);
         }
 
         // Sound effects using Web Audio API
@@ -758,8 +983,11 @@
                 if (instrumentsToday >= 2) daysWithTwoPlus++;
             }
             
-            document.getElementById('daily-count').textContent = 
-                `${daysWithTwoPlus} days with 2+ instruments`;
+            document.getElementById('daily-count').textContent =
+                `${daysWithTwoPlus} / 7 days`;
+
+            // Check for week completion and update streak
+            checkWeekCompletion();
         }
         
         function resetTracker() {
@@ -906,6 +1134,7 @@
         // Initialize on load
         window.addEventListener('load', () => {
             renderData();
+            updateStreak();
         });
     </script>
 </body>
