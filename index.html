@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Practice">
+    <title>Music Practice Tracker</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            max-width: 100%;
+            margin: 0;
+            padding: 15px;
+            background: #f5f5f5;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+
+        .week-label {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .week-label input {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            padding: 8px;
+            font-size: 14px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+
+        .sync-section {
+            text-align: center;
+            margin: 15px 0;
+            padding: 10px;
+            background: #fff;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .sync-btn {
+            padding: 10px 20px;
+            background: #4285f4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            margin: 5px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
+        .sync-btn:active {
+            background: #3367d6;
+        }
+
+        .tracker {
+            background: white;
+            border: 2px solid #333;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 80px repeat(7, 1fr);
+            gap: 2px;
+            background: #333;
+            border: 2px solid #333;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .cell {
+            background: white;
+            padding: 12px 4px;
+            text-align: center;
+            min-height: 35px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+        }
+
+        .header {
+            background: #333;
+            color: white;
+            font-weight: bold;
+            font-size: 10px;
+        }
+
+        .instrument {
+            font-weight: bold;
+            text-align: left;
+            padding-left: 8px;
+            justify-content: flex-start;
+            font-size: 10px;
+            line-height: 1.2;
+        }
+
+        .check-cell {
+            cursor: pointer;
+            font-size: 20px;
+            transition: background 0.2s;
+            touch-action: manipulation;
+        }
+
+        .check-cell:active {
+            background: #e0e0e0;
+        }
+
+        .check-cell.checked {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .summary {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .summary-row:last-child {
+            border-bottom: none;
+        }
+
+        .goal-met {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+
+        .goal-not-met {
+            color: #ff5722;
+        }
+
+        button.reset-btn {
+            display: block;
+            margin: 20px auto;
+            padding: 12px 24px;
+            background: #333;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 14px;
+            border-radius: 4px;
+            touch-action: manipulation;
+        }
+
+        button.reset-btn:active {
+            background: #555;
+        }
+
+        textarea {
+            width: 100%;
+            height: 80px;
+            font-family: monospace;
+            font-size: 11px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        /* Desktop styles */
+        @media (min-width: 768px) {
+            body {
+                max-width: 900px;
+                margin: 40px auto;
+                padding: 20px;
+            }
+
+            h1 {
+                font-size: 32px;
+            }
+
+            .grid {
+                grid-template-columns: 150px repeat(7, 1fr);
+                gap: 1px;
+            }
+
+            .cell {
+                padding: 15px 10px;
+                min-height: 40px;
+                font-size: 14px;
+            }
+
+            .header {
+                font-size: 14px;
+            }
+
+            .instrument {
+                padding-left: 15px;
+                font-size: 14px;
+            }
+
+            .check-cell {
+                font-size: 24px;
+            }
+
+            .check-cell:hover {
+                background: #f0f0f0;
+            }
+
+            .summary {
+                font-size: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>🎸 Music Practice Tracker</h1>
+    <div class="week-label">
+        Week of: <input type="date" id="weekDate">
+    </div>
+
+    <div class="sync-section">
+        <strong>Cross-Device Sync:</strong> Copy the data below to sync between devices.<br>
+        <button class="sync-btn" onclick="exportData()">📋 Copy Data</button>
+        <button class="sync-btn" onclick="importData()">📥 Paste Data</button>
+    </div>
+
+    <div class="tracker">
+        <div class="grid" id="practiceGrid">
+            <div class="cell header"></div>
+            <div class="cell header">Mon</div>
+            <div class="cell header">Tue</div>
+            <div class="cell header">Wed</div>
+            <div class="cell header">Thu</div>
+            <div class="cell header">Fri</div>
+            <div class="cell header">Sat</div>
+            <div class="cell header">Sun</div>
+
+            <div class="cell instrument">Electric Guitar</div>
+            <div class="cell check-cell" data-instrument="electric" data-day="0"></div>
+            <div class="cell check-cell" data-instrument="electric" data-day="1"></div>
+            <div class="cell check-cell" data-instrument="electric" data-day="2"></div>
+            <div class="cell check-cell" data-instrument="electric" data-day="3"></div>
+            <div class="cell check-cell" data-instrument="electric" data-day="4"></div>
+            <div class="cell check-cell" data-instrument="electric" data-day="5"></div>
+            <div class="cell check-cell" data-instrument="electric" data-day="6"></div>
+
+            <div class="cell instrument">Classical Guitar</div>
+            <div class="cell check-cell" data-instrument="classical" data-day="0"></div>
+            <div class="cell check-cell" data-instrument="classical" data-day="1"></div>
+            <div class="cell check-cell" data-instrument="classical" data-day="2"></div>
+            <div class="cell check-cell" data-instrument="classical" data-day="3"></div>
+            <div class="cell check-cell" data-instrument="classical" data-day="4"></div>
+            <div class="cell check-cell" data-instrument="classical" data-day="5"></div>
+            <div class="cell check-cell" data-instrument="classical" data-day="6"></div>
+
+            <div class="cell instrument">Bass</div>
+            <div class="cell check-cell" data-instrument="bass" data-day="0"></div>
+            <div class="cell check-cell" data-instrument="bass" data-day="1"></div>
+            <div class="cell check-cell" data-instrument="bass" data-day="2"></div>
+            <div class="cell check-cell" data-instrument="bass" data-day="3"></div>
+            <div class="cell check-cell" data-instrument="bass" data-day="4"></div>
+            <div class="cell check-cell" data-instrument="bass" data-day="5"></div>
+            <div class="cell check-cell" data-instrument="bass" data-day="6"></div>
+
+            <div class="cell instrument">Piano</div>
+            <div class="cell check-cell" data-instrument="piano" data-day="0"></div>
+            <div class="cell check-cell" data-instrument="piano" data-day="1"></div>
+            <div class="cell check-cell" data-instrument="piano" data-day="2"></div>
+            <div class="cell check-cell" data-instrument="piano" data-day="3"></div>
+            <div class="cell check-cell" data-instrument="piano" data-day="4"></div>
+            <div class="cell check-cell" data-instrument="piano" data-day="5"></div>
+            <div class="cell check-cell" data-instrument="piano" data-day="6"></div>
+        </div>
+
+        <div class="summary" id="summary">
+            <strong>Weekly Progress:</strong>
+            <div class="summary-row">
+                <span>Electric Guitar:</span>
+                <span id="electric-count">0 / 3</span>
+            </div>
+            <div class="summary-row">
+                <span>Classical Guitar:</span>
+                <span id="classical-count">0 / 3</span>
+            </div>
+            <div class="summary-row">
+                <span>Bass:</span>
+                <span id="bass-count">0 / 3</span>
+            </div>
+            <div class="summary-row">
+                <span>Piano:</span>
+                <span id="piano-count">0 / 3</span>
+            </div>
+            <div class="summary-row" style="margin-top: 10px; padding-top: 10px; border-top: 2px solid #333;">
+                <span>Daily practice sessions:</span>
+                <span id="daily-count">0 days with 2+ instruments</span>
+            </div>
+        </div>
+    </div>
+
+    <button class="reset-btn" onclick="resetTracker()">Reset Week</button>
+
+    <script>
+        document.getElementById('weekDate').valueAsDate = new Date();
+
+        let practiceData = loadLocalData();
+
+        function loadLocalData() {
+            const saved = localStorage.getItem('musicPractice');
+            if (saved) {
+                return JSON.parse(saved);
+            }
+            return {};
+        }
+
+        function saveLocalData(data) {
+            localStorage.setItem('musicPractice', JSON.stringify(data));
+        }
+
+        function renderData() {
+            document.querySelectorAll('.check-cell').forEach(cell => {
+                const instrument = cell.dataset.instrument;
+                const day = cell.dataset.day;
+                const key = `${instrument}-${day}`;
+
+                if (practiceData[key]) {
+                    cell.classList.add('checked');
+                    cell.textContent = '✓';
+                } else {
+                    cell.classList.remove('checked');
+                    cell.textContent = '';
+                }
+            });
+            updateSummary();
+        }
+
+        document.querySelectorAll('.check-cell').forEach(cell => {
+            cell.addEventListener('click', function() {
+                const instrument = this.dataset.instrument;
+                const day = this.dataset.day;
+                const key = `${instrument}-${day}`;
+
+                this.classList.toggle('checked');
+
+                if (this.classList.contains('checked')) {
+                    this.textContent = '✓';
+                    practiceData[key] = true;
+                } else {
+                    this.textContent = '';
+                    delete practiceData[key];
+                }
+
+                saveLocalData(practiceData);
+                updateSummary();
+            });
+        });
+
+        function updateSummary() {
+            const instruments = ['electric', 'classical', 'bass', 'piano'];
+
+            instruments.forEach(instrument => {
+                let count = 0;
+                for (let day = 0; day < 7; day++) {
+                    const key = `${instrument}-${day}`;
+                    if (practiceData[key]) count++;
+                }
+
+                const countEl = document.getElementById(`${instrument}-count`);
+                countEl.textContent = `${count} / 3`;
+
+                if (count >= 3) {
+                    countEl.className = 'goal-met';
+                } else {
+                    countEl.className = 'goal-not-met';
+                }
+            });
+
+            let daysWithTwoPlus = 0;
+            for (let day = 0; day < 7; day++) {
+                let instrumentsToday = 0;
+                instruments.forEach(instrument => {
+                    if (practiceData[`${instrument}-${day}`]) {
+                        instrumentsToday++;
+                    }
+                });
+                if (instrumentsToday >= 2) daysWithTwoPlus++;
+            }
+
+            document.getElementById('daily-count').textContent =
+                `${daysWithTwoPlus} days with 2+ instruments`;
+        }
+
+        function resetTracker() {
+            if (confirm('Reset this week? This will clear all checkmarks.')) {
+                practiceData = {};
+                saveLocalData(practiceData);
+                renderData();
+            }
+        }
+
+        function exportData() {
+            const dataStr = JSON.stringify(practiceData);
+            navigator.clipboard.writeText(dataStr).then(() => {
+                alert('✓ Data copied! Paste this on your other device.');
+            }).catch(() => {
+                prompt('Copy this data:', dataStr);
+            });
+        }
+
+        function importData() {
+            const dataStr = prompt('Paste your data here:');
+            if (dataStr) {
+                try {
+                    practiceData = JSON.parse(dataStr);
+                    saveLocalData(practiceData);
+                    renderData();
+                    alert('✓ Data imported successfully!');
+                } catch (e) {
+                    alert('Error: Invalid data format');
+                }
+            }
+        }
+
+        renderData();
+    </script>
+</body>
+</html>
