@@ -6,7 +6,6 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Practice">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎸</text></svg>">
     <title>Music Practice Tracker</title>
     <style>
         * {
@@ -128,21 +127,6 @@
         .check-cell.checked {
             background: #4CAF50;
             color: white;
-        }
-
-        .today-column {
-            background: #fff9e6 !important;
-            box-shadow: inset 0 0 0 2px #ffd700;
-        }
-
-        .today-column.header {
-            background: #ffd700 !important;
-            color: #333;
-        }
-
-        .today-column.checked {
-            background: #4CAF50 !important;
-            box-shadow: inset 0 0 0 2px #ffd700;
         }
 
         .summary {
@@ -352,37 +336,6 @@
             localStorage.setItem('musicPractice', JSON.stringify(data));
         }
 
-        function highlightToday() {
-            // Remove all existing today-column classes
-            document.querySelectorAll('.today-column').forEach(el => {
-                el.classList.remove('today-column');
-            });
-
-            const today = new Date();
-            const weekDateInput = document.getElementById('weekDate');
-            const weekStart = new Date(weekDateInput.value);
-
-            // Calculate days difference from week start
-            const diffTime = today - weekStart;
-            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
-            // If today is within this week (0-6 days from Monday)
-            if (diffDays >= 0 && diffDays < 7) {
-                const dayIndex = diffDays;
-
-                // Highlight header
-                const headers = document.querySelectorAll('.grid .header');
-                if (headers[dayIndex + 1]) { // +1 to skip first empty header
-                    headers[dayIndex + 1].classList.add('today-column');
-                }
-
-                // Highlight all cells in this day column
-                document.querySelectorAll(`.check-cell[data-day="${dayIndex}"]`).forEach(cell => {
-                    cell.classList.add('today-column');
-                });
-            }
-        }
-
         function renderData() {
             document.querySelectorAll('.check-cell').forEach(cell => {
                 const instrument = cell.dataset.instrument;
@@ -398,7 +351,6 @@
                 }
             });
             updateSummary();
-            highlightToday();
         }
 
         document.querySelectorAll('.check-cell').forEach(cell => {
@@ -487,9 +439,6 @@
                 }
             }
         }
-
-        // Listen for week date changes to update today highlighting
-        document.getElementById('weekDate').addEventListener('change', highlightToday);
 
         renderData();
     </script>
