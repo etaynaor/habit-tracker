@@ -1,0 +1,8 @@
+[build]
+  publish = "."
+  command = "echo 'No build needed'"
+
+[[redirects]]
+  from = "/*"
+  to = "/practice_tracker_sync.html"
+  status = 200
