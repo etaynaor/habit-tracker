@@ -671,14 +671,8 @@
         </div>
     </div>
 
-    <!-- Google APIs -->
-    <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
-    <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
-
+    <!-- Google APIs - Define callbacks BEFORE loading scripts -->
     <script>
-        // Initialize Lucide icons
-        lucide.createIcons();
-
         // Google Drive Config
         const CLIENT_ID = '90415557909-pgkuol7snj6s4o4tqrk2p0f8oginu53s.apps.googleusercontent.com';
         const API_KEY = 'AIzaSyA82u5qKmYkXl5cdBoYvQEizzdkgsi_ZR4';
@@ -690,6 +684,58 @@
         let gisInited = false;
         let accessToken = null;
         let fileId = null;
+        let scriptLoadTimeout = null;
+
+        function gapiLoaded() {
+            try {
+                gapi.load('client', async () => {
+                    try {
+                        await gapi.client.init({
+                            apiKey: API_KEY,
+                            discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
+                        });
+                        gapiInited = true;
+                        console.log('GAPI initialized');
+                        updateAuthButton();
+                    } catch (err) {
+                        console.error('Error initializing GAPI:', err);
+                        gapiInited = true; // Mark as initialized even on error to enable button
+                        showToast('Error loading Google APIs', 'error');
+                        updateAuthButton(); // Still try to enable button
+                    }
+                });
+            } catch (err) {
+                console.error('Error loading GAPI client:', err);
+                gapiInited = true; // Mark as initialized even on error to enable button
+                showToast('Error loading Google APIs', 'error');
+                updateAuthButton(); // Still try to enable button
+            }
+        }
+
+        function gisLoaded() {
+            try {
+                tokenClient = google.accounts.oauth2.initTokenClient({
+                    client_id: CLIENT_ID,
+                    scope: SCOPES,
+                    callback: '',
+                });
+                gisInited = true;
+                console.log('GIS initialized');
+                updateAuthButton();
+            } catch (err) {
+                console.error('Error initializing GIS:', err);
+                gisInited = true; // Mark as initialized even on error to enable button
+                showToast('Error loading Google OAuth', 'error');
+                updateAuthButton(); // Still try to enable button
+            }
+        }
+    </script>
+    <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
+    <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
 
         // App State
         let allWeeksData = loadAllWeeksData();
@@ -1506,70 +1552,136 @@
             URL.revokeObjectURL(url);
         }
 
-        // Google Drive integration
-        function gapiLoaded() {
-            gapi.load('client', async () => {
-                try {
-                    await gapi.client.init({
-                        apiKey: API_KEY,
-                        discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
-                    });
-                    gapiInited = true;
-                    updateAuthButton();
-                } catch (err) {
-                    console.error('Error initializing GAPI:', err);
-                    showToast('Error loading Google APIs', 'error');
-                }
-            });
-        }
-
-        function gisLoaded() {
-            tokenClient = google.accounts.oauth2.initTokenClient({
-                client_id: CLIENT_ID,
-                scope: SCOPES,
-                callback: '',
-            });
-            gisInited = true;
-            updateAuthButton();
-        }
-
+        // Google Drive integration - functions moved to top before script tags
         function updateAuthButton() {
+            const btn = document.getElementById('authBtn');
+            if (!btn) {
+                console.error('Auth button not found!');
+                return;
+            }
+
             if (gapiInited && gisInited) {
-                const token = gapi.client.getToken();
-                if (token !== null && token.access_token) {
-                    accessToken = token.access_token;
-                    updateSignedInUI();
-                    loadFromDrive();
-                } else {
-                    const savedEmail = localStorage.getItem('googleUserEmail');
-                    if (savedEmail) {
-                        attemptSilentSignIn(savedEmail);
-                    } else {
-                        const btn = document.getElementById('authBtn');
-                        btn.innerHTML = '<i data-lucide="log-in" class="w-4 h-4 inline mr-2"></i>Sign in with Google';
-                        btn.disabled = false;
-                        lucide.createIcons();
+                // Check if there's an existing valid token
+                try {
+                    if (!gapi.client || typeof gapi.client.getToken !== 'function') {
+                        throw new Error('gapi.client not available');
                     }
+                    const token = gapi.client.getToken();
+                    if (token !== null && token.access_token) {
+                        accessToken = token.access_token;
+                        updateSignedInUI();
+                        loadFromDrive();
+                        return;
+                    }
+                } catch (err) {
+                    console.error('Error checking token:', err);
+                }
+
+                // Try to silently restore session
+                const savedEmail = localStorage.getItem('googleUserEmail');
+                if (savedEmail && tokenClient && typeof tokenClient.requestAccessToken === 'function') {
+                    console.log('Attempting silent sign-in with hint:', savedEmail);
+                    attemptSilentSignIn(savedEmail);
+                } else {
+                    // No saved session or tokenClient not ready, show sign-in button
+                    console.log('No saved session or tokenClient not ready, showing sign-in button');
+                    btn.innerHTML = '<i data-lucide="log-in" class="w-4 h-4 inline mr-2"></i>Sign in with Google';
+                    btn.disabled = false;
+                    lucide.createIcons();
+                    // Render local data so user sees something immediately
+                    loadWeekData();
+                    renderPracticeGrid();
+                }
+            } else {
+                // Scripts not loaded yet, set a timeout to enable button anyway (only once)
+                if (!scriptLoadTimeout) {
+                    scriptLoadTimeout = setTimeout(() => {
+                        if (!gapiInited || !gisInited) {
+                            console.warn('APIs failed to load - enabling button anyway');
+                            const btn = document.getElementById('authBtn');
+                            if (btn) {
+                                btn.innerHTML = '<i data-lucide="log-in" class="w-4 h-4 inline mr-2"></i>Sign in with Google';
+                                btn.disabled = false;
+                                lucide.createIcons();
+                                showToast('Google APIs not available - using local storage only', 'error');
+                                loadWeekData();
+                                renderPracticeGrid();
+                            }
+                        }
+                    }, 5000); // 5 second timeout for scripts to load
                 }
             }
         }
 
         function attemptSilentSignIn(email) {
-            tokenClient.callback = async (resp) => {
-                if (resp.error !== undefined) {
+            // Safety check - if tokenClient doesn't exist or is invalid, just enable button
+            if (!tokenClient) {
+                console.log('tokenClient not available - enabling sign-in button');
+                const btn = document.getElementById('authBtn');
+                btn.innerHTML = '<i data-lucide="log-in" class="w-4 h-4 inline mr-2"></i>Sign in with Google';
+                btn.disabled = false;
+                lucide.createIcons();
+                loadWeekData();
+                renderPracticeGrid();
+                return;
+            }
+
+            let callbackFired = false;
+            const timeout = setTimeout(() => {
+                if (!callbackFired) {
+                    console.log('Silent sign-in timeout - enabling sign-in button');
+                    callbackFired = true;
                     const btn = document.getElementById('authBtn');
-                    btn.innerHTML = '<i data-lucide="log-in" class="w-4 h-4 inline mr-2"></i>Sign in again';
+                    btn.innerHTML = '<i data-lucide="log-in" class="w-4 h-4 inline mr-2"></i>Sign in with Google';
                     btn.disabled = false;
                     lucide.createIcons();
+                    // Also render local data so user sees something
+                    loadWeekData();
+                    renderPracticeGrid();
+                }
+            }, 3000); // 3 second timeout
+
+            tokenClient.callback = async (resp) => {
+                if (callbackFired) return; // Already handled by timeout
+                callbackFired = true;
+                clearTimeout(timeout);
+
+                if (resp.error !== undefined) {
+                    console.log('Silent sign-in failed:', resp.error);
+                    const btn = document.getElementById('authBtn');
+                    btn.innerHTML = '<i data-lucide="log-in" class="w-4 h-4 inline mr-2"></i>Sign in with Google';
+                    btn.disabled = false;
+                    lucide.createIcons();
+                    // Render local data so user sees something
+                    loadWeekData();
+                    renderPracticeGrid();
                     return;
                 }
 
+                console.log('Silent sign-in successful');
                 accessToken = gapi.client.getToken().access_token;
                 updateSignedInUI();
+                
+                // Render local data immediately so table isn't blank while Drive loads
+                loadWeekData();
+                renderPracticeGrid();
+                
                 await loadFromDrive();
             };
 
-            tokenClient.requestAccessToken({prompt: '', login_hint: email});
+            try {
+                tokenClient.requestAccessToken({prompt: '', login_hint: email});
+            } catch (err) {
+                console.error('Error requesting access token:', err);
+                clearTimeout(timeout);
+                callbackFired = true;
+                const btn = document.getElementById('authBtn');
+                btn.innerHTML = '<i data-lucide="log-in" class="w-4 h-4 inline mr-2"></i>Sign in with Google';
+                btn.disabled = false;
+                lucide.createIcons();
+                loadWeekData();
+                renderPracticeGrid();
+            }
         }
 
         function updateSignedInUI() {
@@ -1583,36 +1695,71 @@
         }
 
         function handleAuth() {
-            if (!gapiInited || !gisInited) {
-                showToast('Loading... please wait', 'error');
+            if (!gapiInited || !gisInited || !tokenClient) {
+                showToast('Google APIs not ready - please refresh', 'error');
+                // Re-enable button so user can try again
+                const btn = document.getElementById('authBtn');
+                btn.innerHTML = '<i data-lucide="log-in" class="w-4 h-4 inline mr-2"></i>Sign in with Google';
+                btn.disabled = false;
+                lucide.createIcons();
                 return;
             }
 
             tokenClient.callback = async (resp) => {
                 if (resp.error !== undefined) {
-                    showToast('Auth failed', 'error');
+                    console.error('Auth error:', resp.error);
+                    showToast('Auth failed - please try again', 'error');
+                    // Re-enable button so user can try again
+                    const btn = document.getElementById('authBtn');
+                    btn.innerHTML = '<i data-lucide="log-in" class="w-4 h-4 inline mr-2"></i>Sign in with Google';
+                    btn.disabled = false;
+                    btn.classList.remove('btn-success');
+                    lucide.createIcons();
                     return;
                 }
 
-                accessToken = gapi.client.getToken().access_token;
-                localStorage.setItem('googleSignedIn', 'true');
-
                 try {
-                    const userInfo = await gapi.client.drive.about.get({fields: 'user'});
-                    const email = userInfo.result.user.emailAddress;
-                    localStorage.setItem('googleUserEmail', email);
-                } catch (err) {
-                    console.error('Could not get user email:', err);
-                }
+                    accessToken = gapi.client.getToken().access_token;
+                    localStorage.setItem('googleSignedIn', 'true');
 
-                updateSignedInUI();
-                await loadFromDrive();
+                    try {
+                        const userInfo = await gapi.client.drive.about.get({fields: 'user'});
+                        const email = userInfo.result.user.emailAddress;
+                        localStorage.setItem('googleUserEmail', email);
+                    } catch (err) {
+                        console.error('Could not get user email:', err);
+                    }
+
+                    updateSignedInUI();
+                    
+                    // Render local data immediately so table isn't blank while Drive loads
+                    loadWeekData();
+                    renderPracticeGrid();
+
+                    await loadFromDrive();
+                } catch (err) {
+                    console.error('Error after auth:', err);
+                    showToast('Error after sign-in - using local data', 'error');
+                    // Still show signed in but render local data
+                    updateSignedInUI();
+                    loadWeekData();
+                    renderPracticeGrid();
+                }
             };
 
-            if (gapi.client.getToken() === null) {
-                tokenClient.requestAccessToken({prompt: 'consent'});
-            } else {
-                tokenClient.requestAccessToken({prompt: ''});
+            try {
+                if (gapi.client && gapi.client.getToken && gapi.client.getToken() === null) {
+                    tokenClient.requestAccessToken({prompt: 'consent'});
+                } else {
+                    tokenClient.requestAccessToken({prompt: ''});
+                }
+            } catch (err) {
+                console.error('Error requesting access token:', err);
+                showToast('Error starting sign-in - please try again', 'error');
+                const btn = document.getElementById('authBtn');
+                btn.innerHTML = '<i data-lucide="log-in" class="w-4 h-4 inline mr-2"></i>Sign in with Google';
+                btn.disabled = false;
+                lucide.createIcons();
             }
         }
 
@@ -1653,7 +1800,14 @@
 
             try {
                 fileId = await findOrCreateFile();
-                if (!fileId) return;
+                if (!fileId) {
+                    // Could not create file, render local data instead
+                    loadWeekData();
+                    renderPracticeGrid();
+                    updateSummary();
+                    showStatus('Signed in (using local data)', 'success');
+                    return;
+                }
 
                 const response = await gapi.client.drive.files.get({
                     fileId: fileId,
@@ -1668,10 +1822,20 @@
                     renderPracticeGrid();
                     updateSummary();
                     showStatus('Loaded from Drive', 'success');
+                } else {
+                    // Empty file, render local data
+                    loadWeekData();
+                    renderPracticeGrid();
+                    updateSummary();
+                    showStatus('Ready to sync', 'success');
                 }
             } catch (err) {
-                console.log('No existing data or error loading:', err);
-                showStatus('Ready to sync', 'success');
+                // File might be empty or not exist yet, fall back to local data
+                console.log('No existing data or error loading from Drive:', err);
+                loadWeekData();
+                renderPracticeGrid();
+                updateSummary();
+                showStatus('Signed in (using local data)', 'success');
             }
         }
 
@@ -1721,6 +1885,18 @@
 
         // Initialize
         window.addEventListener('load', () => {
+            // Final safety net - if button is still disabled after 6 seconds, force enable it
+            setTimeout(() => {
+                const btn = document.getElementById('authBtn');
+                if (btn && btn.disabled) {
+                    console.warn('Button still disabled after 6 seconds - force enabling');
+                    btn.innerHTML = '<i data-lucide="log-in" class="w-4 h-4 inline mr-2"></i>Sign in with Google';
+                    btn.disabled = false;
+                    btn.classList.remove('btn-success');
+                    lucide.createIcons();
+                    showToast('Ready - click to sign in', 'success');
+                }
+            }, 6000);
             initDarkMode();
             document.getElementById('weekDate').value = setDateInputValue(new Date());
             loadWeekData();
