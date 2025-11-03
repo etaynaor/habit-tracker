@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Recover Practice Data</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+        .backup { background: #f5f5f5; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        button { padding: 10px 20px; margin: 5px; background: #4285f4; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #3367d6; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Recover Practice Data</h1>
+    <p>This tool checks for backups of your practice data and can restore them.</p>
+    
+    <div id="results"></div>
+    
+    <script>
+        function checkBackups() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<h2>Checking for backups...</h2>';
+            
+            // Check current data
+            const current = localStorage.getItem('musicPractice');
+            const backup = localStorage.getItem('musicPractice_backup');
+            
+            let html = '<div class="backup">';
+            html += '<h3>Current Data</h3>';
+            if (current) {
+                try {
+                    const data = JSON.parse(current);
+                    const weekCount = data.weeks ? Object.keys(data.weeks).length : 0;
+                    html += `<p>Found current data with <strong>${weekCount}</strong> weeks</p>`;
+                    html += `<pre>${JSON.stringify(data, null, 2).substring(0, 500)}...</pre>`;
+                } catch (e) {
+                    html += '<p class="error">Current data is corrupted</p>';
+                }
+            } else {
+                html += '<p class="error">No current data found</p>';
+            }
+            html += '</div>';
+            
+            html += '<div class="backup">';
+            html += '<h3>Backup Data</h3>';
+            if (backup) {
+                try {
+                    const data = JSON.parse(backup);
+                    const weekCount = data.weeks ? Object.keys(data.weeks).length : 0;
+                    html += `<p>Found backup data with <strong>${weekCount}</strong> weeks</p>`;
+                    html += `<pre>${JSON.stringify(data, null, 2).substring(0, 500)}...</pre>`;
+                    html += '<button onclick="restoreBackup()">Restore from Backup</button>';
+                } catch (e) {
+                    html += '<p class="error">Backup data is corrupted</p>';
+                }
+            } else {
+                html += '<p class="error">No backup found</p>';
+            }
+            html += '</div>';
+            
+            results.innerHTML = html;
+        }
+        
+        function restoreBackup() {
+            const backup = localStorage.getItem('musicPractice_backup');
+            if (backup) {
+                localStorage.setItem('musicPractice', backup);
+                alert('Backup restored! Refresh the practice tracker page to see your data.');
+                checkBackups();
+            } else {
+                alert('No backup found to restore.');
+            }
+        }
+        
+        // Auto-check on load
+        checkBackups();
+    </script>
+</body>
+</html>
+
