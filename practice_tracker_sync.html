@@ -1780,18 +1780,27 @@
                     loadWeekData();
                     renderPracticeGrid();
 
-                    await loadFromDrive();
+                    // Try to load from Drive, but don't show errors if it fails
+                    try {
+                        await loadFromDrive();
+                    } catch (err) {
+                        // Silently handle Drive errors - user is signed in and local data is shown
+                        console.log('Drive sync will happen in background:', err);
+                        // Sync local data to Drive in background
+                        if (accessToken) {
+                            setTimeout(() => {
+                                syncData().catch(() => {}); // Silent fail
+                            }, 2000);
+                        }
+                    }
                 } catch (err) {
                     console.error('Error after auth:', err);
                     // Still show signed in but render local data
                     updateSignedInUI();
                     loadWeekData();
                     renderPracticeGrid();
-                    // Show info message briefly, then success
-                    showToast('Using local data - will sync when Drive is available', 'info');
-                    setTimeout(() => {
-                        showStatus('Signed in - local data saved', 'success');
-                    }, 2000);
+                    // Show success, not error
+                    showStatus('Signed in - local data saved', 'success');
                 }
             };
 
@@ -1838,22 +1847,34 @@
                 return createResponse.result.id;
             } catch (err) {
                 console.error('Error finding/creating file:', err);
-                showToast('Error accessing Drive', 'error');
+                // Don't show error toast - just return null silently
                 return null;
             }
         }
 
         async function loadFromDrive() {
-            showStatus('Loading from Drive...', 'loading');
+            // Don't show loading status if user is already signed in and data is visible
+            const isSilentLoad = accessToken && Object.keys(allWeeksData.weeks || {}).length > 0;
+            if (!isSilentLoad) {
+                showStatus('Loading from Drive...', 'loading');
+            }
 
             try {
+                // Check if gapi.client is ready
+                if (!gapi.client || !gapi.client.drive) {
+                    console.log('GAPI client not ready yet, skipping Drive load');
+                    return;
+                }
+
                 fileId = await findOrCreateFile();
                 if (!fileId) {
                     // Could not create file, render local data instead
                     loadWeekData();
                     renderPracticeGrid();
                     updateSummary();
-                    showStatus('Signed in (using local data)', 'success');
+                    if (!isSilentLoad) {
+                        showStatus('Signed in', 'success');
+                    }
                     return;
                 }
 
@@ -1910,17 +1931,21 @@
                     loadWeekData();
                     renderPracticeGrid();
                     updateSummary();
-                    showStatus('Loaded from Drive', 'success');
+                    if (!isSilentLoad) {
+                        showStatus('Loaded from Drive', 'success');
+                    }
                 } else {
                     // Empty file, keep local data and sync it to Drive
                     console.log('Drive file is empty, keeping local data');
                     if (Object.keys(allWeeksData.weeks || {}).length > 0) {
-                        setTimeout(() => syncData(), 1000);
+                        setTimeout(() => syncData().catch(() => {}), 1000);
                     }
                     loadWeekData();
                     renderPracticeGrid();
                     updateSummary();
-                    showStatus('Ready to sync', 'success');
+                    if (!isSilentLoad) {
+                        showStatus('Signed in', 'success');
+                    }
                 }
             } catch (err) {
                 // File might be empty or not exist yet, fall back to local data
@@ -1938,10 +1963,13 @@
                 loadWeekData();
                 renderPracticeGrid();
                 updateSummary();
-                showStatus('Signed in (using local data)', 'success');
+                // Don't show error status - just silently use local data
+                if (!isSilentLoad) {
+                    showStatus('Signed in', 'success');
+                }
                 // Sync local data to Drive in case Drive was empty
                 if (accessToken && Object.keys(allWeeksData.weeks || {}).length > 0) {
-                    setTimeout(() => syncData(), 1000); // Sync after a delay
+                    setTimeout(() => syncData().catch(() => {}), 1000); // Sync after a delay, silent fail
                 }
             }
         }
