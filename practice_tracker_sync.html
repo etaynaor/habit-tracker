@@ -740,6 +740,36 @@
         // App State
         let allWeeksData = loadAllWeeksData();
         let practiceData = {};
+        
+        // Backup local data before any Drive operations to prevent data loss
+        function backupLocalData() {
+            const backup = JSON.stringify(allWeeksData);
+            localStorage.setItem('musicPractice_backup', backup);
+            console.log('Local data backed up');
+        }
+        
+        function restoreLocalData() {
+            const backup = localStorage.getItem('musicPractice_backup');
+            if (backup) {
+                try {
+                    const backupData = JSON.parse(backup);
+                    if (backupData.weeks && Object.keys(backupData.weeks).length > 0) {
+                        console.log('Restoring from backup');
+                        allWeeksData = backupData;
+                        saveAllWeeksData();
+                        return true;
+                    }
+                } catch (e) {
+                    console.error('Error restoring backup:', e);
+                }
+            }
+            return false;
+        }
+        
+        // Create backup on load
+        if (Object.keys(allWeeksData.weeks || {}).length > 0) {
+            backupLocalData();
+        }
         let streakData = loadStreakData();
         let settings = loadSettings();
         let undoStack = [];
@@ -992,6 +1022,8 @@
             const weekKey = getWeekKey();
             allWeeksData.weeks[weekKey] = practiceData;
             saveAllWeeksData();
+            // Update backup whenever data changes
+            backupLocalData();
         }
 
         function loadStreakData() {
@@ -1585,6 +1617,10 @@
                 const wasSignedIn = localStorage.getItem('googleSignedIn') === 'true';
                 const savedEmail = localStorage.getItem('googleUserEmail');
                 
+                // Always render local data first so user sees something
+                loadWeekData();
+                renderPracticeGrid();
+                
                 if (wasSignedIn && savedEmail && tokenClient && typeof tokenClient.requestAccessToken === 'function') {
                     console.log('Restoring session - attempting silent sign-in with hint:', savedEmail);
                     attemptSilentSignIn(savedEmail);
@@ -1828,44 +1864,86 @@
 
                 if (response.body) {
                     const driveData = JSON.parse(response.body);
-                    // MERGE Drive data with local data - prefer Drive data but keep local if Drive is missing weeks
-                    if (driveData.weeks) {
-                        // Merge: use Drive data, but keep local weeks that aren't in Drive
+                    // MERGE Drive data with local data - ONLY if Drive has actual content
+                    if (driveData.weeks && Object.keys(driveData.weeks).length > 0) {
+                        // Backup before merge
+                        backupLocalData();
+                        
+                        // Drive has data - merge it with local, but preserve local weeks not in Drive
                         const localWeeks = allWeeksData.weeks || {};
                         const driveWeeks = driveData.weeks || {};
-                        // Merge both - Drive overwrites, but local weeks not in Drive are preserved
-                        const mergedWeeks = Object.assign({}, localWeeks, driveWeeks);
-                        allWeeksData = { weeks: mergedWeeks };
+                        
+                        // Only merge if Drive has actual practice data (not just empty week objects)
+                        const driveHasData = Object.values(driveWeeks).some(week => 
+                            week && typeof week === 'object' && Object.keys(week).length > 0
+                        );
+                        
+                        if (driveHasData) {
+                            // Merge: Drive overwrites matching weeks, but local weeks not in Drive are preserved
+                            const mergedWeeks = Object.assign({}, localWeeks, driveWeeks);
+                            allWeeksData = { weeks: mergedWeeks };
+                            saveAllWeeksData(); // Save merged data
+                            console.log('Merged Drive data with local data');
+                        } else {
+                            // Drive has structure but no actual data - keep local data
+                            console.log('Drive has structure but no data, keeping local data intact');
+                            // Don't change allWeeksData - keep what we have locally
+                        }
                     } else {
-                        // Drive has old format or empty, keep local data - DON'T overwrite
-                        console.log('Drive data format mismatch, keeping local data');
+                        // Drive is empty or has no weeks - KEEP LOCAL DATA, don't overwrite
+                        console.log('Drive has no data, keeping local data intact');
                         // Don't change allWeeksData - keep what we have locally
+                        // Sync local data TO Drive instead
+                        if (Object.keys(allWeeksData.weeks || {}).length > 0) {
+                            console.log('Syncing local data to Drive...');
+                            setTimeout(() => syncData(), 1000);
+                        }
                     }
-                    saveAllWeeksData(); // Save merged data
+                    
+                    // Safety check: if local data is now empty, restore from backup
+                    if (Object.keys(allWeeksData.weeks || {}).length === 0) {
+                        console.warn('Local data became empty after merge - attempting restore from backup');
+                        if (restoreLocalData()) {
+                            console.log('Successfully restored from backup');
+                        }
+                    }
                     loadWeekData();
                     renderPracticeGrid();
                     updateSummary();
                     showStatus('Loaded from Drive', 'success');
                 } else {
-                    // Empty file, keep local data
+                    // Empty file, keep local data and sync it to Drive
+                    console.log('Drive file is empty, keeping local data');
+                    if (Object.keys(allWeeksData.weeks || {}).length > 0) {
+                        setTimeout(() => syncData(), 1000);
+                    }
                     loadWeekData();
                     renderPracticeGrid();
                     updateSummary();
                     showStatus('Ready to sync', 'success');
                 }
             } catch (err) {
-                    // File might be empty or not exist yet, fall back to local data
-                    console.log('No existing data or error loading from Drive:', err);
-                    // DON'T overwrite local data - just render what we have
-                    loadWeekData();
-                    renderPracticeGrid();
-                    updateSummary();
-                    showStatus('Signed in (using local data)', 'success');
-                    // Sync local data to Drive in case Drive was empty
-                    if (accessToken) {
-                        setTimeout(() => syncData(), 1000); // Sync after a delay
+                // File might be empty or not exist yet, fall back to local data
+                console.log('No existing data or error loading from Drive:', err);
+                // DON'T overwrite local data - just render what we have
+                // Make sure local data is preserved - restore from backup if lost
+                if (Object.keys(allWeeksData.weeks || {}).length === 0) {
+                    console.warn('WARNING: Local data is empty - attempting restore from backup');
+                    if (restoreLocalData()) {
+                        console.log('Successfully restored from backup');
+                    } else {
+                        console.error('No backup available to restore');
                     }
                 }
+                loadWeekData();
+                renderPracticeGrid();
+                updateSummary();
+                showStatus('Signed in (using local data)', 'success');
+                // Sync local data to Drive in case Drive was empty
+                if (accessToken && Object.keys(allWeeksData.weeks || {}).length > 0) {
+                    setTimeout(() => syncData(), 1000); // Sync after a delay
+                }
+            }
         }
 
         async function syncData() {
