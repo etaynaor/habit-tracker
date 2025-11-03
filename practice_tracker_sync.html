@@ -891,7 +891,11 @@
         document.getElementById('resetAllBtn').addEventListener('click', () => {
             if (confirm('Are you sure? This will delete ALL practice data and cannot be undone!')) {
                 if (confirm('Really? This action is permanent!')) {
-                    localStorage.clear();
+                    // Clear only practice data, NOT sign-in state or settings
+                    localStorage.removeItem('musicPractice');
+                    localStorage.removeItem('streakData');
+                    localStorage.removeItem('appSettings');
+                    // Keep googleSignedIn and googleUserEmail so user stays logged in
                     location.reload();
                 }
             }
@@ -1561,7 +1565,7 @@
             }
 
             if (gapiInited && gisInited) {
-                // Check if there's an existing valid token
+                // Check if there's an existing valid token in current session
                 try {
                     if (!gapi.client || typeof gapi.client.getToken !== 'function') {
                         throw new Error('gapi.client not available');
@@ -1577,10 +1581,12 @@
                     console.error('Error checking token:', err);
                 }
 
-                // Try to silently restore session
+                // Check localStorage for saved sign-in state - auto-restore session
+                const wasSignedIn = localStorage.getItem('googleSignedIn') === 'true';
                 const savedEmail = localStorage.getItem('googleUserEmail');
-                if (savedEmail && tokenClient && typeof tokenClient.requestAccessToken === 'function') {
-                    console.log('Attempting silent sign-in with hint:', savedEmail);
+                
+                if (wasSignedIn && savedEmail && tokenClient && typeof tokenClient.requestAccessToken === 'function') {
+                    console.log('Restoring session - attempting silent sign-in with hint:', savedEmail);
                     attemptSilentSignIn(savedEmail);
                 } else {
                     // No saved session or tokenClient not ready, show sign-in button
@@ -1660,6 +1666,8 @@
 
                 console.log('Silent sign-in successful');
                 accessToken = gapi.client.getToken().access_token;
+                // Persist sign-in state
+                localStorage.setItem('googleSignedIn', 'true');
                 updateSignedInUI();
                 
                 // Render local data immediately so table isn't blank while Drive loads
@@ -1739,11 +1747,15 @@
                     await loadFromDrive();
                 } catch (err) {
                     console.error('Error after auth:', err);
-                    showToast('Error after sign-in - using local data', 'error');
                     // Still show signed in but render local data
                     updateSignedInUI();
                     loadWeekData();
                     renderPracticeGrid();
+                    // Show info message briefly, then success
+                    showToast('Using local data - will sync when Drive is available', 'info');
+                    setTimeout(() => {
+                        showStatus('Signed in - local data saved', 'success');
+                    }, 2000);
                 }
             };
 
@@ -1816,27 +1828,44 @@
 
                 if (response.body) {
                     const driveData = JSON.parse(response.body);
-                    allWeeksData = driveData;
-                    saveAllWeeksData();
+                    // MERGE Drive data with local data - prefer Drive data but keep local if Drive is missing weeks
+                    if (driveData.weeks) {
+                        // Merge: use Drive data, but keep local weeks that aren't in Drive
+                        const localWeeks = allWeeksData.weeks || {};
+                        const driveWeeks = driveData.weeks || {};
+                        // Merge both - Drive overwrites, but local weeks not in Drive are preserved
+                        const mergedWeeks = Object.assign({}, localWeeks, driveWeeks);
+                        allWeeksData = { weeks: mergedWeeks };
+                    } else {
+                        // Drive has old format or empty, keep local data - DON'T overwrite
+                        console.log('Drive data format mismatch, keeping local data');
+                        // Don't change allWeeksData - keep what we have locally
+                    }
+                    saveAllWeeksData(); // Save merged data
                     loadWeekData();
                     renderPracticeGrid();
                     updateSummary();
                     showStatus('Loaded from Drive', 'success');
                 } else {
-                    // Empty file, render local data
+                    // Empty file, keep local data
                     loadWeekData();
                     renderPracticeGrid();
                     updateSummary();
                     showStatus('Ready to sync', 'success');
                 }
             } catch (err) {
-                // File might be empty or not exist yet, fall back to local data
-                console.log('No existing data or error loading from Drive:', err);
-                loadWeekData();
-                renderPracticeGrid();
-                updateSummary();
-                showStatus('Signed in (using local data)', 'success');
-            }
+                    // File might be empty or not exist yet, fall back to local data
+                    console.log('No existing data or error loading from Drive:', err);
+                    // DON'T overwrite local data - just render what we have
+                    loadWeekData();
+                    renderPracticeGrid();
+                    updateSummary();
+                    showStatus('Signed in (using local data)', 'success');
+                    // Sync local data to Drive in case Drive was empty
+                    if (accessToken) {
+                        setTimeout(() => syncData(), 1000); // Sync after a delay
+                    }
+                }
         }
 
         async function syncData() {
