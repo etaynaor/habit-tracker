@@ -671,8 +671,14 @@
         </div>
     </div>
 
-    <!-- Google APIs - Define callbacks BEFORE loading scripts -->
+    <!-- Google APIs - Load scripts first, define callbacks in main script -->
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="https://accounts.google.com/gsi/client"></script>
+
     <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
         // Google Drive Config
         const CLIENT_ID = '90415557909-pgkuol7snj6s4o4tqrk2p0f8oginu53s.apps.googleusercontent.com';
         const API_KEY = 'AIzaSyA82u5qKmYkXl5cdBoYvQEizzdkgsi_ZR4';
@@ -686,59 +692,13 @@
         let fileId = null;
         let scriptLoadTimeout = null;
 
-        function gapiLoaded() {
-            try {
-                gapi.load('client', async () => {
-                    try {
-                        await gapi.client.init({
-                            apiKey: API_KEY,
-                            discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
-                        });
-                        gapiInited = true;
-                        console.log('GAPI initialized');
-                        updateAuthButton();
-                    } catch (err) {
-                        console.error('Error initializing GAPI:', err);
-                        gapiInited = true; // Mark as initialized even on error to enable button
-                        showToast('Error loading Google APIs', 'error');
-                        updateAuthButton(); // Still try to enable button
-                    }
-                });
-            } catch (err) {
-                console.error('Error loading GAPI client:', err);
-                gapiInited = true; // Mark as initialized even on error to enable button
-                showToast('Error loading Google APIs', 'error');
-                updateAuthButton(); // Still try to enable button
-            }
-        }
-
-        function gisLoaded() {
-            try {
-                tokenClient = google.accounts.oauth2.initTokenClient({
-                    client_id: CLIENT_ID,
-                    scope: SCOPES,
-                    callback: '',
-                });
-                gisInited = true;
-                console.log('GIS initialized');
-                updateAuthButton();
-            } catch (err) {
-                console.error('Error initializing GIS:', err);
-                gisInited = true; // Mark as initialized even on error to enable button
-                showToast('Error loading Google OAuth', 'error');
-                updateAuthButton(); // Still try to enable button
-            }
-        }
-    </script>
-    <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
-    <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
-
-    <script>
-        // Initialize Lucide icons
-        lucide.createIcons();
-
         // App State
         let allWeeksData = loadAllWeeksData();
+        // Ensure weeks object always exists
+        if (!allWeeksData.weeks) {
+            allWeeksData.weeks = {};
+            saveAllWeeksData();
+        }
         let practiceData = {};
         
         // Backup local data before any Drive operations to prevent data loss
@@ -1011,6 +971,10 @@
 
         function loadWeekData() {
             const weekKey = getWeekKey();
+            // Safety check - ensure weeks object exists
+            if (!allWeeksData.weeks) {
+                allWeeksData.weeks = {};
+            }
             practiceData = allWeeksData.weeks[weekKey] || {};
 
             // Load notes
@@ -1589,6 +1553,51 @@
         }
 
         // Google Drive integration - functions moved to top before script tags
+        // Google API initialization callbacks
+        function gapiLoaded() {
+            try {
+                gapi.load('client', async () => {
+                    try {
+                        await gapi.client.init({
+                            apiKey: API_KEY,
+                            discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
+                        });
+                        gapiInited = true;
+                        console.log('GAPI initialized');
+                        updateAuthButton();
+                    } catch (err) {
+                        console.error('Error initializing GAPI:', err);
+                        gapiInited = true; // Mark as initialized even on error to enable button
+                        showToast('Error loading Google APIs', 'error');
+                        updateAuthButton(); // Still try to enable button
+                    }
+                });
+            } catch (err) {
+                console.error('Error loading GAPI client:', err);
+                gapiInited = true; // Mark as initialized even on error to enable button
+                showToast('Error loading Google APIs', 'error');
+                updateAuthButton(); // Still try to enable button
+            }
+        }
+
+        function gisLoaded() {
+            try {
+                tokenClient = google.accounts.oauth2.initTokenClient({
+                    client_id: CLIENT_ID,
+                    scope: SCOPES,
+                    callback: '',
+                });
+                gisInited = true;
+                console.log('GIS initialized');
+                updateAuthButton();
+            } catch (err) {
+                console.error('Error initializing GIS:', err);
+                gisInited = true; // Mark as initialized even on error to enable button
+                showToast('Error loading Google OAuth', 'error');
+                updateAuthButton(); // Still try to enable button
+            }
+        }
+
         function updateAuthButton() {
             const btn = document.getElementById('authBtn');
             if (!btn) {
@@ -2020,6 +2029,18 @@
 
         // Initialize
         window.addEventListener('load', () => {
+            // Initialize Google APIs after page load
+            if (typeof gapi !== 'undefined') {
+                gapiLoaded();
+            } else {
+                console.warn('GAPI not loaded');
+            }
+            if (typeof google !== 'undefined') {
+                gisLoaded();
+            } else {
+                console.warn('GIS not loaded');
+            }
+            
             // Final safety net - if button is still disabled after 6 seconds, force enable it
             setTimeout(() => {
                 const btn = document.getElementById('authBtn');
