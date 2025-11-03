@@ -491,86 +491,173 @@
         let gisInited = false;
         let accessToken = null;
         let fileId = null;
+        let scriptLoadTimeout = null;
 
         function gapiLoaded() {
-            gapi.load('client', async () => {
-                try {
-                    await gapi.client.init({
-                        apiKey: API_KEY,
-                        discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
-                    });
-                    gapiInited = true;
-                    console.log('GAPI initialized');
-                    updateAuthButton();
-                } catch (err) {
-                    console.error('Error initializing GAPI:', err);
-                    showStatus('Error loading Google APIs', 'error');
-                }
-            });
+            try {
+                gapi.load('client', async () => {
+                    try {
+                        await gapi.client.init({
+                            apiKey: API_KEY,
+                            discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
+                        });
+                        gapiInited = true;
+                        console.log('GAPI initialized');
+                        updateAuthButton();
+                    } catch (err) {
+                        console.error('Error initializing GAPI:', err);
+                        gapiInited = true; // Mark as initialized even on error to enable button
+                        showStatus('Error loading Google APIs', 'error');
+                        updateAuthButton(); // Still try to enable button
+                    }
+                });
+            } catch (err) {
+                console.error('Error loading GAPI client:', err);
+                gapiInited = true; // Mark as initialized even on error to enable button
+                showStatus('Error loading Google APIs', 'error');
+                updateAuthButton(); // Still try to enable button
+            }
         }
 
         function gisLoaded() {
-            tokenClient = google.accounts.oauth2.initTokenClient({
-                client_id: CLIENT_ID,
-                scope: 'https://www.googleapis.com/auth/drive.file',
-                callback: '',
-            });
-            gisInited = true;
-            console.log('GIS initialized');
-            updateAuthButton();
+            try {
+                tokenClient = google.accounts.oauth2.initTokenClient({
+                    client_id: CLIENT_ID,
+                    scope: 'https://www.googleapis.com/auth/drive.file',
+                    callback: '',
+                });
+                gisInited = true;
+                console.log('GIS initialized');
+                updateAuthButton();
+            } catch (err) {
+                console.error('Error initializing GIS:', err);
+                gisInited = true; // Mark as initialized even on error to enable button
+                showStatus('Error loading Google OAuth', 'error');
+                updateAuthButton(); // Still try to enable button
+            }
         }
 
         function updateAuthButton() {
             if (gapiInited && gisInited) {
                 // Check if there's an existing valid token
-                const token = gapi.client.getToken();
-                if (token !== null && token.access_token) {
-                    // We have a valid token from the session
-                    console.log('Found existing token, using it');
-                    accessToken = token.access_token;
-                    updateSignedInUI();
-                    loadFromDrive();
-                } else {
-                    // Try to silently restore session
-                    const savedEmail = localStorage.getItem('googleUserEmail');
-                    if (savedEmail) {
-                        console.log('Attempting silent sign-in with hint:', savedEmail);
-                        attemptSilentSignIn(savedEmail);
-                    } else {
-                        // No saved session, show sign-in button
-                        console.log('No saved session, showing sign-in button');
-                        document.getElementById('authBtn').textContent = 'Sign in with Google';
-                        document.getElementById('authBtn').disabled = false;
+                try {
+                    if (!gapi.client || typeof gapi.client.getToken !== 'function') {
+                        throw new Error('gapi.client not available');
                     }
+                    const token = gapi.client.getToken();
+                    if (token !== null && token.access_token) {
+                        // We have a valid token from the session
+                        console.log('Found existing token, using it');
+                        accessToken = token.access_token;
+                        updateSignedInUI();
+                        loadFromDrive();
+                        return;
+                    }
+                } catch (err) {
+                    console.error('Error checking token:', err);
+                }
+
+                // Try to silently restore session
+                const savedEmail = localStorage.getItem('googleUserEmail');
+                if (savedEmail && tokenClient && typeof tokenClient.requestAccessToken === 'function') {
+                    console.log('Attempting silent sign-in with hint:', savedEmail);
+                    attemptSilentSignIn(savedEmail);
+                } else {
+                    // No saved session or tokenClient not ready, show sign-in button
+                    console.log('No saved session or tokenClient not ready, showing sign-in button');
+                    document.getElementById('authBtn').textContent = 'Sign in with Google';
+                    document.getElementById('authBtn').disabled = false;
+                    // Render local data so user sees something immediately
+                    loadWeekData();
+                    renderData();
+                }
+            } else {
+                // Scripts not loaded yet, set a timeout to enable button anyway (only once)
+                if (!scriptLoadTimeout) {
+                    scriptLoadTimeout = setTimeout(() => {
+                        if (!gapiInited || !gisInited) {
+                            console.warn('APIs failed to load - enabling button anyway');
+                            document.getElementById('authBtn').textContent = 'Sign in with Google';
+                            document.getElementById('authBtn').disabled = false;
+                            showStatus('Google APIs not available - using local storage only', 'error');
+                            loadWeekData();
+                            renderData();
+                        }
+                    }, 5000); // 5 second timeout for scripts to load
                 }
             }
         }
 
         function attemptSilentSignIn(email) {
+            // Safety check - if tokenClient doesn't exist or is invalid, just enable button
+            if (!tokenClient) {
+                console.log('tokenClient not available - enabling sign-in button');
+                document.getElementById('authBtn').textContent = 'Sign in with Google';
+                document.getElementById('authBtn').disabled = false;
+                loadWeekData();
+                renderData();
+                return;
+            }
+
+            let callbackFired = false;
+            const timeout = setTimeout(() => {
+                if (!callbackFired) {
+                    console.log('Silent sign-in timeout - enabling sign-in button');
+                    callbackFired = true;
+                    document.getElementById('authBtn').textContent = 'Sign in with Google';
+                    document.getElementById('authBtn').disabled = false;
+                    // Also render local data so user sees something
+                    loadWeekData();
+                    renderData();
+                }
+            }, 3000); // 3 second timeout
+
             tokenClient.callback = async (resp) => {
+                if (callbackFired) return; // Already handled by timeout
+                callbackFired = true;
+                clearTimeout(timeout);
+
                 if (resp.error !== undefined) {
                     console.log('Silent sign-in failed:', resp.error);
                     // Show sign-in button
-                    document.getElementById('authBtn').textContent = 'Sign in again';
+                    document.getElementById('authBtn').textContent = 'Sign in with Google';
                     document.getElementById('authBtn').disabled = false;
+                    // Render local data so user sees something
+                    loadWeekData();
+                    renderData();
                     return;
                 }
 
                 console.log('Silent sign-in successful');
                 accessToken = gapi.client.getToken().access_token;
                 updateSignedInUI();
+                
+                // Render local data immediately so table isn't blank while Drive loads
+                loadWeekData();
+                renderData();
+                
                 await loadFromDrive();
             };
 
-            // Request token with hint (silent if user session exists)
-            tokenClient.requestAccessToken({prompt: '', login_hint: email});
+            try {
+                // Request token with hint (silent if user session exists)
+                tokenClient.requestAccessToken({prompt: '', login_hint: email});
+            } catch (err) {
+                console.error('Error requesting access token:', err);
+                clearTimeout(timeout);
+                callbackFired = true;
+                document.getElementById('authBtn').textContent = 'Sign in with Google';
+                document.getElementById('authBtn').disabled = false;
+                loadWeekData();
+                renderData();
+            }
         }
 
         function updateSignedInUI() {
             document.getElementById('authBtn').textContent = '✓ Signed in';
             document.getElementById('authBtn').classList.add('signed-in');
             document.getElementById('authBtn').disabled = true;
-            showStatus('Auto-sync enabled', 'success');
+            showStatus('Auto-sync enabled', 'success', true);
         }
     </script>
 
@@ -1084,40 +1171,68 @@
             }
         }
         function handleAuth() {
-            if (!gapiInited || !gisInited) {
-                showStatus('Loading... please wait', 'error');
+            if (!gapiInited || !gisInited || !tokenClient) {
+                showStatus('Google APIs not ready - please refresh', 'error');
+                // Re-enable button so user can try again
+                document.getElementById('authBtn').textContent = 'Sign in with Google';
+                document.getElementById('authBtn').disabled = false;
                 return;
             }
 
             tokenClient.callback = async (resp) => {
                 if (resp.error !== undefined) {
-                    showStatus('Auth failed', 'error');
+                    console.error('Auth error:', resp.error);
+                    showStatus('Auth failed - please try again', 'error');
+                    // Re-enable button so user can try again
+                    document.getElementById('authBtn').textContent = 'Sign in with Google';
+                    document.getElementById('authBtn').disabled = false;
+                    document.getElementById('authBtn').classList.remove('signed-in');
                     return;
                 }
 
-                accessToken = gapi.client.getToken().access_token;
-                localStorage.setItem('googleSignedIn', 'true');
-
-                // Get and store user email for future silent sign-ins
                 try {
-                    const userInfo = await gapi.client.drive.about.get({fields: 'user'});
-                    const email = userInfo.result.user.emailAddress;
-                    localStorage.setItem('googleUserEmail', email);
-                    console.log('Stored user email:', email);
+                    accessToken = gapi.client.getToken().access_token;
+                    localStorage.setItem('googleSignedIn', 'true');
+
+                    // Get and store user email for future silent sign-ins
+                    try {
+                        const userInfo = await gapi.client.drive.about.get({fields: 'user'});
+                        const email = userInfo.result.user.emailAddress;
+                        localStorage.setItem('googleUserEmail', email);
+                        console.log('Stored user email:', email);
+                    } catch (err) {
+                        console.error('Could not get user email:', err);
+                    }
+
+                    updateSignedInUI();
+                    
+                    // Render local data immediately so table isn't blank while Drive loads
+                    loadWeekData();
+                    renderData();
+
+                    // Load data from Drive (will overwrite local data if Drive has newer data)
+                    await loadFromDrive();
                 } catch (err) {
-                    console.error('Could not get user email:', err);
+                    console.error('Error after auth:', err);
+                    showStatus('Error after sign-in - using local data', 'error');
+                    // Still show signed in but render local data
+                    updateSignedInUI();
+                    loadWeekData();
+                    renderData();
                 }
-
-                updateSignedInUI();
-
-                // Load data from Drive
-                await loadFromDrive();
             };
 
-            if (gapi.client.getToken() === null) {
-                tokenClient.requestAccessToken({prompt: 'consent'});
-            } else {
-                tokenClient.requestAccessToken({prompt: ''});
+            try {
+                if (gapi.client && gapi.client.getToken && gapi.client.getToken() === null) {
+                    tokenClient.requestAccessToken({prompt: 'consent'});
+                } else {
+                    tokenClient.requestAccessToken({prompt: ''});
+                }
+            } catch (err) {
+                console.error('Error requesting access token:', err);
+                showStatus('Error starting sign-in - please try again', 'error');
+                document.getElementById('authBtn').textContent = 'Sign in with Google';
+                document.getElementById('authBtn').disabled = false;
             }
         }
         
@@ -1157,7 +1272,13 @@
 
             try {
                 fileId = await findOrCreateFile();
-                if (!fileId) return;
+                if (!fileId) {
+                    // Could not create file, render local data instead
+                    loadWeekData();
+                    renderData();
+                    showStatus('Signed in (using local data)', 'success');
+                    return;
+                }
 
                 const response = await gapi.client.drive.files.get({
                     fileId: fileId,
@@ -1173,11 +1294,18 @@
                     loadWeekData();
                     renderData();
                     showStatus('✓ Loaded from Drive', 'success');
+                } else {
+                    // Empty file, render local data
+                    loadWeekData();
+                    renderData();
+                    showStatus('✓ Ready to sync', 'success');
                 }
             } catch (err) {
-                // File might be empty or not exist yet
-                console.log('No existing data or error loading:', err);
-                showStatus('✓ Ready to sync', 'success');
+                // File might be empty or not exist yet, fall back to local data
+                console.log('No existing data or error loading from Drive:', err);
+                loadWeekData();
+                renderData();
+                showStatus('Signed in (using local data)', 'success');
             }
         }
         
@@ -1216,24 +1344,40 @@
             }
         }
         
-        function showStatus(message, type) {
+        function showStatus(message, type, persistent = false) {
             const statusEl = document.getElementById('syncStatus');
             statusEl.textContent = message;
             statusEl.style.color = type === 'error' ? '#ff5722' : type === 'success' ? '#4CAF50' : '#999';
 
-            if (type === 'success' || type === 'loading') {
+            if (!persistent && (type === 'success' || type === 'loading')) {
                 setTimeout(() => {
                     statusEl.textContent = '';
                 }, 2000);
             }
         }
         
-        // Initialize on load
+        // Initialize on load - ALWAYS render local data first
         window.addEventListener('load', () => {
-            loadWeekData(); // Load current week's data
+            // Render local data immediately so user sees something right away
+            loadWeekData();
             renderData();
             updateStreak();
-            updateWeekRangeDisplay(); // Show week range
+            updateWeekRangeDisplay();
+            
+            // Google APIs will load separately and sync when ready
+            console.log('Page loaded - local data rendered, waiting for Google APIs...');
+            
+            // Final safety net - if button is still disabled after 6 seconds, force enable it
+            setTimeout(() => {
+                const btn = document.getElementById('authBtn');
+                if (btn && btn.disabled) {
+                    console.warn('Button still disabled after 6 seconds - force enabling');
+                    btn.textContent = 'Sign in with Google';
+                    btn.disabled = false;
+                    btn.classList.remove('signed-in');
+                    showStatus('Ready - click to sign in', 'success');
+                }
+            }, 6000);
         });
     </script>
 </body>
