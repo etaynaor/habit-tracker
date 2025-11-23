@@ -1025,15 +1025,22 @@
 
             async deletePractice(recordId) {
                 try {
+                    console.log('Deleting record from Airtable:', recordId);
                     const response = await fetch(`${this.baseUrl}/Practices/${recordId}`, {
                         method: 'DELETE',
                         headers: this.headers
                     });
-                    if (!response.ok) throw new Error('Failed to delete from Airtable');
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error('Airtable deletion failed:', errorText);
+                        throw new Error('Failed to delete from Airtable');
+                    }
+                    console.log('Successfully deleted record from Airtable');
                     return true;
                 } catch (e) {
                     console.error('Error deleting practice:', e);
                     showToast('Delete failed: ' + e.message, 'error');
+                    return false;
                 }
             },
 
@@ -2166,16 +2173,30 @@
             statusEl.innerHTML = '<i data-lucide="loader" class="w-3 h-3 animate-spin"></i> Saving...';
             lucide.createIcons();
 
-            if (action === 'check') {
-                await AirtableService.createPractice(data.date, data.instrument, data.week);
-            } else if (action === 'uncheck') {
-                const recordId = await AirtableService.findRecordId(data.date, data.instrument);
-                if (recordId) {
-                    await AirtableService.deletePractice(recordId);
+            try {
+                if (action === 'check') {
+                    console.log('Syncing CHECK to Airtable:', data);
+                    await AirtableService.createPractice(data.date, data.instrument, data.week);
+                } else if (action === 'uncheck') {
+                    console.log('Syncing UNCHECK to Airtable:', data);
+                    const recordId = await AirtableService.findRecordId(data.date, data.instrument);
+                    if (recordId) {
+                        console.log('Found record to delete:', recordId);
+                        const success = await AirtableService.deletePractice(recordId);
+                        if (!success) {
+                            console.error('Deletion returned false');
+                            return;
+                        }
+                    } else {
+                        console.warn('No record found to delete for:', data);
+                    }
                 }
-            }
 
-            statusEl.innerHTML = '<i data-lucide="cloud" class="w-3 h-3 text-green-500"></i> <span class="text-green-600">Synced</span>';
+                statusEl.innerHTML = '<i data-lucide="cloud" class="w-3 h-3 text-green-500"></i> <span class="text-green-600">Synced</span>';
+            } catch (error) {
+                console.error('syncToAirtable error:', error);
+                statusEl.innerHTML = '<i data-lucide="alert-circle" class="w-3 h-3 text-red-500"></i> <span class="text-red-600">Error</span>';
+            }
             lucide.createIcons();
         }
 
