@@ -940,17 +940,19 @@
                 // Use filterByFormula to find the specific record
                 // Formula: AND({Date} = 'date', {Instrument} = 'instrumentId')
                 const formula = `AND({Date}='${date}', {Instrument}='${instrumentId}')`;
-                const url = `${this.baseUrl}/Practices?filterByFormula=${encodeURIComponent(formula)}`;
+                // const url = `${this.baseUrl}/Practices?filterByFormula=${encodeURIComponent(formula)}`; // This line is no longer needed as fetchAllPractices handles the URL construction
 
                 try {
-                    const response = await fetch(url, { headers: this.headers });
-                    const data = await response.json();
-                    if (data.records && data.records.length > 0) {
-                        return data.records[0].id;
+                    console.log(`Searching for record with date: ${date}, instrument: ${instrumentId}`);
+                    const records = await this.fetchAllPractices(`AND({Date} = '${date}', {Instrument} = '${instrumentId}')`);
+                    if (records && records.length > 0) {
+                        console.log('Found record:', records[0]);
+                        return records[0].id;
                     }
+                    console.log('No record found');
                     return null;
-                } catch (e) {
-                    console.error('Error finding record:', e);
+                } catch (error) {
+                    console.error('Error finding record:', error);
                     return null;
                 }
             }
@@ -1914,8 +1916,11 @@
 
             if (records.length > 0) {
                 // Rebuild local data from Airtable
-                // Note: This replaces local data. In a more complex app, we'd merge.
-                allWeeksData = { weeks: {} };
+                // MERGE strategy: Add Airtable records to local data. 
+                // Do NOT wipe local data, to allow migration of unsynced local history.
+                if (!allWeeksData.weeks) {
+                    allWeeksData.weeks = {};
+                }
 
                 records.forEach(record => {
                     const fields = record.fields;
@@ -1985,28 +1990,32 @@
 
             // Collect all items to migrate
             const itemsToMigrate = [];
+            let hasData = false;
             Object.keys(allWeeksData.weeks).forEach(weekKey => {
                 const weekData = allWeeksData.weeks[weekKey];
-                Object.keys(weekData).forEach(key => {
-                    if (!key.startsWith('_') && weekData[key]) {
-                        const instrumentId = key.split('-')[0];
-                        const dayIndex = key.split('-')[1];
+                // Check if week has any actual practice data (keys not starting with _)
+                if (Object.keys(weekData).filter(k => !k.startsWith('_')).length > 0) {
+                    hasData = true;
+                    Object.keys(weekData).forEach(key => {
+                        if (!key.startsWith('_') && weekData[key]) {
+                            const instrumentId = key.split('-')[0];
+                            const dayIndex = key.split('-')[1];
 
-                        // Calculate date for this item
-                        // We need to reconstruct the date from weekKey + dayIndex
-                        const [year, weekNum] = weekKey.split('-W');
-                        const simpleDate = getDateFromWeek(parseInt(year), parseInt(weekNum), parseInt(dayIndex));
+                            // Calculate date for this item
+                            const [year, weekNum] = weekKey.split('-W');
+                            const simpleDate = getDateFromWeek(parseInt(year), parseInt(weekNum), parseInt(dayIndex));
 
-                        itemsToMigrate.push({
-                            date: simpleDate,
-                            instrument: instrumentId,
-                            week: weekKey
-                        });
-                    }
-                });
+                            itemsToMigrate.push({
+                                date: simpleDate,
+                                instrument: instrumentId,
+                                week: weekKey
+                            });
+                        }
+                    });
+                }
             });
 
-            if (itemsToMigrate.length === 0) {
+            if (!hasData || itemsToMigrate.length === 0) {
                 showToast('No local data to migrate', 'info');
                 btn.disabled = false;
                 progressContainer.classList.add('hidden');
