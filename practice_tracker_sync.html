@@ -996,18 +996,26 @@
 
             async createPractice(date, instrumentId, weekKey) {
                 try {
+                    const payload = {
+                        fields: {
+                            "Date": date,
+                            "Instrument": instrumentId,
+                            "Week": weekKey
+                        }
+                    };
+                    console.log('Creating practice with payload:', payload);
+
                     const response = await fetch(`${this.baseUrl}/Practices`, {
                         method: 'POST',
                         headers: this.headers,
-                        body: JSON.stringify({
-                            fields: {
-                                "Date": date,
-                                "Instrument": instrumentId,
-                                "Week": weekKey
-                            }
-                        })
+                        body: JSON.stringify(payload)
                     });
-                    if (!response.ok) throw new Error('Failed to save to Airtable');
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        console.error('Airtable error response:', errorText);
+                        throw new Error('Failed to save to Airtable');
+                    }
                     return await response.json();
                 } catch (e) {
                     console.error('Error creating practice:', e);
@@ -2351,6 +2359,9 @@
             return setDateInputValue(targetDate);
         }
 
+        // Initialize weekDate ASAP (before Airtable sync might trigger rendering)
+        document.getElementById('weekDate').value = setDateInputValue(new Date());
+
         // Initial Sync Check
         if (airtableConfig.token && airtableConfig.baseId) {
             updateSyncStatus(true);
@@ -2360,7 +2371,6 @@
         // Initialize
         window.addEventListener('load', () => {
             initTheme();
-            document.getElementById('weekDate').value = setDateInputValue(new Date());
             loadWeekData();
             renderPracticeGrid();
             updateSummary();
