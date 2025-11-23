@@ -959,10 +959,27 @@
         // Config Event Listeners
         document.getElementById('saveAirtableConfig').addEventListener('click', async () => {
             const token = document.getElementById('airtableToken').value.trim();
-            const baseId = document.getElementById('airtableBaseId').value.trim();
+            let baseId = document.getElementById('airtableBaseId').value.trim();
+
+            // Extract Base ID if user pasted a full URL
+            // Format: https://airtable.com/appGnRlcfdYuUIyzB/tbl...
+            // Or just: appGnRlcfdYuUIyzB/tbl...
+            const baseIdMatch = baseId.match(/(app[a-zA-Z0-9]{14})/);
+            if (baseIdMatch) {
+                baseId = baseIdMatch[1];
+                // Update the input field to show the clean ID
+                document.getElementById('airtableBaseId').value = baseId;
+            }
 
             if (!token || !baseId) {
                 showToast('Please enter both Token and Base ID', 'error');
+                // Re-enable button and restore text if it was already spinning
+                const btn = document.getElementById('saveAirtableConfig');
+                if (btn.disabled) { // Check if button was already disabled by a previous attempt
+                    btn.innerHTML = '<i data-lucide="save" class="w-4 h-4 inline mr-2"></i>Save & Connect'; // Restore original text
+                    btn.disabled = false;
+                    lucide.createIcons();
+                }
                 return;
             }
 
