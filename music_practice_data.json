@@ -1,0 +1,66 @@
+{
+  "weeks": {
+    "NaN-WNaN": {
+      "bass-0": true,
+      "piano-0": true,
+      "bass-1": true,
+      "bass-2": true,
+      "classical-2": true,
+      "bass-3": true,
+      "bass-5": true,
+      "electric-5": true,
+      "bass-6": true
+    },
+    "2025-W45": {
+      "bass-0": true,
+      "piano-0": true,
+      "bass-2": true,
+      "electric-2": true,
+      "piano-3": true,
+      "bass-3": true,
+      "piano-4": true,
+      "classical-4": true,
+      "classical-5": true,
+      "electric-5": true
+    },
+    "2025-W44": {
+      "electric-5": true,
+      "classical-5": true,
+      "piano-5": true,
+      "electric-4": true,
+      "bass-4": true,
+      "bass-3": true,
+      "bass-1": true,
+      "electric-1": true,
+      "piano-6": true,
+      "classical-6": true,
+      "electric-6": true
+    },
+    "2025-W43": {
+      "bass-0": true,
+      "bass-1": true,
+      "bass-4": true,
+      "bass-5": true,
+      "bass-3": true,
+      "classical-1": true,
+      "classical-4": true,
+      "electric-6": true,
+      "piano-6": true
+    },
+    "2025-W46": {
+      "bass-0": true,
+      "bass-2": true,
+      "electric-5": true
+    },
+    "2025-W47": {
+      "piano-3": true,
+      "piano-4": true,
+      "piano-2": true,
+      "classical-0": true,
+      "piano-5": true,
+      "bass-5": true,
+      "classical-5": true,
+      "bass-4": true
+    }
+  }
+}

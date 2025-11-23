@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Habit Tracker Migration</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="https://accounts.google.com/gsi/client"></script>
+    <!-- Load local secrets if available -->
+    <script src="airtable_secrets.js" onerror="console.log('No local secrets')"></script>
+</head>
+
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="bg-white p-8 rounded-xl shadow-lg max-w-md w-full">
+        <h1 class="text-2xl font-bold mb-4 text-center">Migration Tool</h1>
+        <p class="text-gray-600 mb-6 text-center text-sm">
+            Migrate your practice history from Google Drive to Airtable.
+        </p>
+
+        <div id="step1" class="space-y-4">
+            <div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800 mb-4">
+                <i data-lucide="info" class="w-4 h-4 inline mr-1"></i>
+                Click below to sign in to Google and start the migration automatically.
+            </div>
+
+            <button id="authBtn"
+                class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2">
+                <i data-lucide="log-in" class="w-4 h-4"></i>
+                Sign in & Migrate
+            </button>
+        </div>
+
+        <div id="progressArea" class="hidden space-y-4">
+            <div class="flex items-center justify-between text-sm font-medium">
+                <span id="statusText">Initializing...</span>
+                <span id="percentText">0%</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-2.5">
+                <div id="progressBar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                    style="width: 0%"></div>
+            </div>
+            <div id="logArea"
+                class="h-32 overflow-y-auto bg-gray-50 p-2 rounded text-xs font-mono text-gray-600 border border-gray-200">
+            </div>
+        </div>
+
+        <div id="successArea" class="hidden text-center space-y-4 mt-6">
+            <div class="text-green-600 font-bold text-lg">
+                <i data-lucide="check-circle" class="w-8 h-8 mx-auto mb-2"></i>
+                Migration Complete!
+            </div>
+            <p class="text-sm text-gray-600">Your data has been moved to Airtable.</p>
+            <a href="practice_tracker_sync.html"
+                class="inline-block bg-gray-800 hover:bg-gray-900 text-white font-medium py-2 px-6 rounded-lg transition-colors">
+                Open Habit Tracker
+            </a>
+        </div>
+    </div>
+
+    <script>
+        // Google Config
+        const CLIENT_ID = '90415557909-pgkuol7snj6s4o4tqrk2p0f8oginu53s.apps.googleusercontent.com';
+        const API_KEY = 'AIzaSyA82u5qKmYkXl5cdBoYvQEizzdkgsi_ZR4';
+        const SCOPES = 'https://www.googleapis.com/auth/drive.readonly';
+        const FILE_NAME = 'music_practice_data.json';
+
+        // Airtable Config
+        const airtableConfig = {
+            token: localStorage.getItem('airtable_token') || (window.AIRTABLE_SECRETS ? window.AIRTABLE_SECRETS.token : ''),
+            baseId: localStorage.getItem('airtable_baseId') || (window.AIRTABLE_SECRETS ? window.AIRTABLE_SECRETS.baseId : '')
+        };
+
+        let tokenClient;
+        let gapiInited = false;
+        let gisInited = false;
+        let accessToken = null;
+
+        // Initialize Lucide
+        lucide.createIcons();
+
+        // Helper: Log
+        function log(msg) {
+            const logArea = document.getElementById('logArea');
+            const div = document.createElement('div');
+            div.textContent = `> ${msg}`;
+            logArea.appendChild(div);
+            logArea.scrollTop = logArea.scrollHeight;
+            console.log(msg);
+        }
+
+        // Helper: Date from Week
+        function getDateFromWeek(year, week, dayIndex) {
+            const simple = new Date(year, 0, 1 + (week - 1) * 7);
+            const dow = simple.getDay();
+            const ISOweekStart = simple;
+            if (dow <= 4)
+                ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+            else
+                ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+
+            const targetDate = new Date(ISOweekStart);
+            targetDate.setDate(ISOweekStart.getDate() + dayIndex);
+
+            return targetDate.toISOString().split('T')[0];
+        }
+
+        // Airtable Service (Simplified)
+        const AirtableService = {
+            async createPractice(date, instrumentId, weekKey) {
+                const url = `https://api.airtable.com/v0/${airtableConfig.baseId}/Practices`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${airtableConfig.token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        fields: {
+                            "Date": date,
+                            "Instrument": instrumentId,
+                            "Week": weekKey
+                        }
+                    })
+                });
+                if (!response.ok) throw new Error(`Airtable Error: ${response.statusText}`);
+                return await response.json();
+            }
+        };
+
+        // Google Auth Logic
+        function gapiLoaded() {
+            gapi.load('client', async () => {
+                await gapi.client.init({
+                    apiKey: API_KEY,
+                    discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest'],
+                });
+                gapiInited = true;
+                checkAuth();
+            });
+        }
+
+        function gisLoaded() {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: SCOPES,
+                callback: '', // Defined later
+            });
+            gisInited = true;
+            checkAuth();
+        }
+
+        function checkAuth() {
+            if (gapiInited && gisInited) {
+                document.getElementById('authBtn').disabled = false;
+            }
+        }
+
+        document.getElementById('authBtn').addEventListener('click', () => {
+            tokenClient.callback = async (resp) => {
+                if (resp.error) {
+                    throw resp;
+                }
+                accessToken = resp.access_token;
+                startMigration();
+            };
+            tokenClient.requestAccessToken({ prompt: 'consent' });
+        });
+
+        async function startMigration() {
+            document.getElementById('step1').classList.add('hidden');
+            document.getElementById('progressArea').classList.remove('hidden');
+            log('Authenticated with Google.');
+
+            try {
+                // 1. Find File
+                log('Searching for music_practice_data.json...');
+                const response = await gapi.client.drive.files.list({
+                    q: `name='${FILE_NAME}' and trashed=false`,
+                    fields: 'files(id, name)',
+                    spaces: 'drive'
+                });
+
+                if (response.result.files.length === 0) {
+                    log('Error: File not found in Drive!');
+                    alert('Could not find music_practice_data.json in your Google Drive.');
+                    return;
+                }
+
+                const fileId = response.result.files[0].id;
+                log(`Found file: ${fileId}`);
+
+                // 2. Download Content
+                log('Downloading file content...');
+                const fileResp = await gapi.client.drive.files.get({
+                    fileId: fileId,
+                    alt: 'media'
+                });
+
+                const data = JSON.parse(fileResp.body);
+                log('File downloaded and parsed.');
+
+                // 3. Process Data
+                const itemsToMigrate = [];
+                if (data.weeks) {
+                    Object.keys(data.weeks).forEach(weekKey => {
+                        const weekData = data.weeks[weekKey];
+                        Object.keys(weekData).forEach(key => {
+                            if (!key.startsWith('_') && weekData[key]) {
+                                const instrumentId = key.split('-')[0];
+                                const dayIndex = parseInt(key.split('-')[1]);
+                                const [year, weekNum] = weekKey.split('-W');
+                                const simpleDate = getDateFromWeek(parseInt(year), parseInt(weekNum), dayIndex);
+
+                                itemsToMigrate.push({
+                                    date: simpleDate,
+                                    instrument: instrumentId,
+                                    week: weekKey
+                                });
+                            }
+                        });
+                    });
+                }
+
+                if (itemsToMigrate.length === 0) {
+                    log('No practice records found in file.');
+                    return;
+                }
+
+                log(`Found ${itemsToMigrate.length} records to migrate.`);
+
+                // 4. Upload to Airtable
+                let success = 0;
+                let fail = 0;
+                const total = itemsToMigrate.length;
+
+                for (let i = 0; i < total; i++) {
+                    const item = itemsToMigrate[i];
+                    try {
+                        await AirtableService.createPractice(item.date, item.instrument, item.week);
+                        success++;
+                        log(`Uploaded: ${item.date} - ${item.instrument}`);
+                    } catch (err) {
+                        fail++;
+                        log(`Failed: ${item.date} - ${err.message}`);
+                    }
+
+                    // Update UI
+                    const percent = Math.round(((i + 1) / total) * 100);
+                    document.getElementById('progressBar').style.width = `${percent}%`;
+                    document.getElementById('percentText').textContent = `${percent}%`;
+                    document.getElementById('statusText').textContent = `Migrating... ${i + 1}/${total}`;
+
+                    // Rate limit
+                    await new Promise(r => setTimeout(r, 250));
+                }
+
+                log(`Migration finished. Success: ${success}, Failed: ${fail}`);
+                document.getElementById('progressArea').classList.add('hidden');
+                document.getElementById('successArea').classList.remove('hidden');
+
+            } catch (err) {
+                console.error(err);
+                log(`Error: ${err.message || JSON.stringify(err)}`);
+                alert('Migration failed. Check logs.');
+            }
+        }
+
+        // Init
+        if (typeof gapi !== 'undefined') gapiLoaded();
+        if (typeof google !== 'undefined') gisLoaded();
+
+    </script>
+</body>
+
+</html>
